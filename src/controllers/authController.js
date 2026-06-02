@@ -1,7 +1,19 @@
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const twilio = require('twilio');
 const User = require('../models/User');
 const Otp = require('../models/Otp');
+
+// Initialize Twilio client using Account SID and Auth Token if they are set in env
+const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
+const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER || process.env.twilioWhatsAppNumber;
+
+let twilioClient = null;
+if (twilioAccountSid && twilioAuthToken) {
+  twilioClient = twilio(twilioAccountSid, twilioAuthToken);
+}
+
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'supersecretjwtkeyforstrydclubauthtokens', {
@@ -84,7 +96,41 @@ const sendOtp = async (req, res) => {
         });
       }
     } else {
+      console.log("otp");
+
       // Channel: phone number
+      let formattedPhone = value.replace(/\s+/g, ''); // remove any spaces
+      if (!formattedPhone.startsWith('+')) {
+        // Assume +91 (India) country code by default if no prefix is supplied
+        formattedPhone = `+91${formattedPhone}`;
+      }
+
+      if (twilioClient && twilioWhatsAppNumber) {
+        try {
+          const fromWhatsApp = twilioWhatsAppNumber.startsWith('whatsapp:')
+            ? twilioWhatsAppNumber
+            : `whatsapp:${twilioWhatsAppNumber}`;
+
+          const toWhatsApp = `whatsapp:${formattedPhone}`;
+
+          await twilioClient.messages.create({
+            body: `Your STRYDCLUB verification code is: *${code}*. It is valid for 5 minutes.`,
+            from: fromWhatsApp,
+            to: toWhatsApp
+          });
+
+          console.log(`[OTP] Sent real Twilio WhatsApp OTP to ${formattedPhone} successfully.`);
+          return res.status(200).json({
+            success: true,
+            message: 'OTP sent successfully via WhatsApp'
+          });
+        } catch (twilioError) {
+          console.error(`[Twilio Error] Failed to send via Twilio WhatsApp: ${twilioError.message}. Falling back to simulation.`);
+        }
+      }
+
+      // Fallback: Twilio not configured or failed, log mock output
+      console.warn(`[OTP WARNING] Twilio credentials or TWILIO_WHATSAPP_NUMBER not set in environment variables. Falling back to mock phone output.`);
       return res.status(200).json({
         success: true,
         message: 'OTP sent successfully (Simulated - check server console for code)',
@@ -112,7 +158,7 @@ const verifyOtp = async (req, res) => {
     // Keep '123456' as standard bypass fallback for manual evaluation
     if (code !== '123456') {
       const otpRecord = await Otp.findOne({ emailOrPhone: value });
-      
+
       if (!otpRecord) {
         return res.status(400).json({ success: false, message: 'OTP not found or expired. Please request a new one.' });
       }
@@ -148,9 +194,10 @@ const verifyOtp = async (req, res) => {
     } else {
       user = await User.findOne({ phone: value });
       if (!user) {
+        const cleanPhoneDigits = value.replace(/\D/g, '');
         user = await User.create({
           name: `Athlete_${value.slice(-4)}`,
-          email: `athlete_${value.slice(-4)}@strydclub.com`,
+          email: `athlete_${cleanPhoneDigits}@strydclub.com`,
           phone: value,
           favoriteSports: ['Running'],
           memberSince: 'January 2026',
