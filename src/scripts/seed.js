@@ -5,7 +5,7 @@ const User = require('../models/User');
 const Event = require('../models/Event');
 const Registration = require('../models/Registration');
 
-dotenv.config({ path: '/Users/midhunnairts/Documents/strydclub/StrydclubBackend/.env' });
+dotenv.config();
 
 const seedData = async () => {
   try {
