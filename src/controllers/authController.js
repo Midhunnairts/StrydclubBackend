@@ -105,27 +105,23 @@ const sendOtp = async (req, res) => {
         formattedPhone = `+91${formattedPhone}`;
       }
 
-      if (twilioClient && twilioWhatsAppNumber) {
+      const twilioFromNumber = (twilioWhatsAppNumber || '').replace('whatsapp:', '');
+
+      if (twilioClient && twilioFromNumber) {
         try {
-          const fromWhatsApp = twilioWhatsAppNumber.startsWith('whatsapp:')
-            ? twilioWhatsAppNumber
-            : `whatsapp:${twilioWhatsAppNumber}`;
-
-          const toWhatsApp = `whatsapp:${formattedPhone}`;
-
           await twilioClient.messages.create({
-            body: `Your STRYDCLUB verification code is: *${code}*. It is valid for 5 minutes.`,
-            from: fromWhatsApp,
-            to: toWhatsApp
+            body: `Your STRYDCLUB verification code is: ${code}. It is valid for 5 minutes.`,
+            from: twilioFromNumber,
+            to: formattedPhone
           });
 
-          console.log(`[OTP] Sent real Twilio WhatsApp OTP to ${formattedPhone} successfully.`);
+          console.log(`[OTP] Sent real Twilio SMS OTP to ${formattedPhone} successfully.`);
           return res.status(200).json({
             success: true,
-            message: 'OTP sent successfully via WhatsApp'
+            message: 'OTP sent successfully via SMS'
           });
         } catch (twilioError) {
-          console.error(`[Twilio Error] Failed to send via Twilio WhatsApp: ${twilioError.message}. Falling back to simulation.`);
+          console.error(`[Twilio Error] Failed to send via Twilio SMS: ${twilioError.message}. Falling back to simulation.`);
         }
       }
 
