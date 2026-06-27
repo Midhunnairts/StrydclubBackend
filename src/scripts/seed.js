@@ -24,6 +24,7 @@ const seedData = async () => {
       email: 'midhun@strydclub.com',
       phone: '+91 9876543210',
       avatarUrl: '',
+      role: 'admin',
       favoriteSports: ['Running', 'Football', 'Badminton'],
       memberSince: 'January 2026',
       totalEvents: 12,

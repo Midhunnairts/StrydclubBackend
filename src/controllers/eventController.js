@@ -87,4 +87,80 @@ const registerForEvent = async (req, res) => {
   }
 };
 
-module.exports = { getEvents, getEventBySlug, registerForEvent };
+const createEvent = async (req, res) => {
+  const {
+    title,
+    category,
+    description,
+    format,
+    skillLevel,
+    rulesNotes,
+    date,
+    time,
+    endTime,
+    registrationCloses,
+    location,
+    price,
+    slotsTotal,
+    playersPerTeam,
+    prizePool,
+    bannerUrl,
+    rules,
+    schedule,
+    organizedBy,
+    contact
+  } = req.body;
+
+  if (!title || !category || !date || !time || !location || slotsTotal === undefined) {
+    return res.status(400).json({ success: false, message: 'Please fill in all required fields' });
+  }
+
+  try {
+    // Generate a clean URL-friendly slug
+    let slug = title.toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+
+    // Check if the slug already exists to prevent duplicate endpoints
+    const existingEvent = await Event.findOne({ slug });
+    if (existingEvent) {
+      // Append a unique timestamp or random suffix to make it unique
+      slug = `${slug}-${Date.now().toString().slice(-4)}`;
+    }
+
+    const newEvent = await Event.create({
+      slug,
+      title,
+      category,
+      description,
+      format: format || 'Single Match',
+      skillLevel: skillLevel || 'Open',
+      rulesNotes: rulesNotes || '',
+      date,
+      time,
+      endTime: endTime || '',
+      registrationCloses: registrationCloses || '',
+      location,
+      price: Number(price) || 0,
+      slotsTotal: Number(slotsTotal),
+      playersPerTeam: Number(playersPerTeam) || 0,
+      prizePool: Number(prizePool) || 0,
+      bannerUrl: bannerUrl || '',
+      slotsFilled: 0,
+      rules: rules || [],
+      schedule: schedule || [],
+      organizedBy: organizedBy || req.user.name || 'Strydclub Admin',
+      contact: contact || req.user.phone || ''
+    });
+
+    console.log(`[Event Created] Slug: ${newEvent.slug}, Title: ${newEvent.title}`);
+    return res.status(201).json({ success: true, event: newEvent });
+  } catch (error) {
+    console.error(`Create event error: ${error.message}`);
+    return res.status(500).json({ success: false, message: 'Server error during event creation' });
+  }
+};
+
+module.exports = { getEvents, getEventBySlug, registerForEvent, createEvent };
+
