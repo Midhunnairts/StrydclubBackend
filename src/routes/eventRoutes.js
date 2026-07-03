@@ -1,5 +1,5 @@
 const express = require('express');
-const { getEvents, getEventBySlug, registerForEvent, createEvent } = require('../controllers/eventController');
+const { getEvents, getEventBySlug, registerForEvent, createEvent, cancelRegistration } = require('../controllers/eventController');
 const { protect } = require('../middleware/auth');
 const router = express.Router();
 
@@ -15,5 +15,6 @@ router.get('/', getEvents);
 router.post('/', protect, isAdmin, createEvent);
 router.get('/:slug', getEventBySlug);
 router.post('/:slug/register', protect, registerForEvent);
+router.post('/:slug/cancel', protect, cancelRegistration);
 
 module.exports = router;

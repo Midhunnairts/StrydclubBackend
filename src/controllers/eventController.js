@@ -173,5 +173,51 @@ const createEvent = async (req, res) => {
   }
 };
 
-module.exports = { getEvents, getEventBySlug, registerForEvent, createEvent };
+const cancelRegistration = async (req, res) => {
+  const { slug } = req.params;
+  const userId = req.user._id;
+
+  try {
+    let event;
+    if (mongoose.Types.ObjectId.isValid(slug)) {
+      event = await Event.findById(slug);
+    } else {
+      event = await Event.findOne({ slug });
+    }
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Event not found' });
+    }
+
+    const existingReg = await Registration.findOne({ user: userId, event: event._id });
+    if (!existingReg) {
+      return res.status(400).json({ success: false, message: 'You are not registered for this event' });
+    }
+
+    // Delete registration
+    await Registration.deleteOne({ _id: existingReg._id });
+
+    // Decrease slotsFilled
+    if (event.slotsFilled > 0) {
+      event.slotsFilled -= 1;
+    }
+
+    // Remove user from participants list
+    event.participants = event.participants.filter(p => p.name !== req.user.name);
+    await event.save();
+
+    // Decrease user's total events count
+    const user = await User.findById(userId);
+    if (user.totalEvents > 0) {
+      user.totalEvents -= 1;
+    }
+    await user.save();
+
+    return res.status(200).json({ success: true, message: 'Successfully cancelled registration' });
+  } catch (error) {
+    console.error(`Cancel registration error: ${error.message}`);
+    return res.status(500).json({ success: false, message: 'Server error during cancellation' });
+  }
+};
+
+module.exports = { getEvents, getEventBySlug, registerForEvent, createEvent, cancelRegistration };
 
