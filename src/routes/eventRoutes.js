@@ -12,7 +12,7 @@ const isAdmin = (req, res, next) => {
 };
 
 router.get('/', getEvents);
-router.post('/', protect, createEvent);
+router.post('/', protect, isAdmin, createEvent);
 router.get('/:slug', getEventBySlug);
 router.post('/:slug/register', protect, registerForEvent);
 
