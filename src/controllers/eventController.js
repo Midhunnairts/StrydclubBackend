@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Event = require('../models/Event');
 const Registration = require('../models/Registration');
 const User = require('../models/User');
@@ -31,13 +32,18 @@ const getEvents = async (req, res) => {
 const getEventBySlug = async (req, res) => {
   const { slug } = req.params;
   try {
-    const event = await Event.findOne({ slug });
+    let event;
+    if (mongoose.Types.ObjectId.isValid(slug)) {
+      event = await Event.findById(slug);
+    } else {
+      event = await Event.findOne({ slug });
+    }
     if (!event) {
       return res.status(404).json({ success: false, message: 'Event not found' });
     }
     return res.status(200).json({ success: true, event });
   } catch (error) {
-    console.error(`Get event by slug error: ${error.message}`);
+    console.error(`Get event by slug or ID error: ${error.message}`);
     return res.status(500).json({ success: false, message: 'Server error retrieving event details' });
   }
 };
@@ -47,7 +53,12 @@ const registerForEvent = async (req, res) => {
   const userId = req.user._id;
 
   try {
-    const event = await Event.findOne({ slug });
+    let event;
+    if (mongoose.Types.ObjectId.isValid(slug)) {
+      event = await Event.findById(slug);
+    } else {
+      event = await Event.findOne({ slug });
+    }
     if (!event) {
       return res.status(404).json({ success: false, message: 'Event not found' });
     }
