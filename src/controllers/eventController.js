@@ -21,7 +21,9 @@ const getEvents = async (req, res) => {
   }
 
   try {
-    const events = await Event.find(filter).select('slug title category date time location status slotsFilled slotsTotal price');
+    const events = await Event.find(filter)
+      .select('slug title category date time location status slotsFilled slotsTotal price')
+      .sort({ createdAt: -1 });
     return res.status(200).json({ success: true, events });
   } catch (error) {
     console.error(`Get events error: ${error.message}`);
