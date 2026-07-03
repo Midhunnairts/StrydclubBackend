@@ -174,11 +174,16 @@ const verifyOtp = async (req, res) => {
 
     let user;
     if (channel === 'email') {
+      const emailLower = value.toLowerCase();
+      const isAdminEmail = emailLower.includes('.stryd') || emailLower.includes('@stryd') || emailLower.includes('strydclub');
+      const role = isAdminEmail ? 'admin' : 'user';
+
       user = await User.findOne({ email: value });
       if (!user) {
         user = await User.create({
           name: value.split('@')[0],
           email: value,
+          role,
           phone: `+91 ${Math.floor(1000000000 + Math.random() * 9000000000)}`,
           favoriteSports: ['Running', 'Football'],
           memberSince: 'January 2026',
@@ -186,6 +191,9 @@ const verifyOtp = async (req, res) => {
           eventsWon: 0,
           sportsPlayed: 0
         });
+      } else if (isAdminEmail && user.role !== 'admin') {
+        user.role = 'admin';
+        await user.save();
       }
     } else {
       user = await User.findOne({ phone: value });
@@ -195,6 +203,7 @@ const verifyOtp = async (req, res) => {
           name: `Athlete_${value.slice(-4)}`,
           email: `athlete_${cleanPhoneDigits}@strydclub.com`,
           phone: value,
+          role: 'user',
           favoriteSports: ['Running'],
           memberSince: 'January 2026',
           totalEvents: 0,
