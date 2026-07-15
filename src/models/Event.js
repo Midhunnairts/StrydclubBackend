@@ -24,6 +24,7 @@ const eventSchema = new mongoose.Schema({
   endTime: { type: String, default: '' },
   registrationCloses: { type: String, default: '' },
   location: { type: String, required: true },
+  venueUrl: { type: String, default: '' },
   format: { type: String, default: 'Single Match' },
   skillLevel: { type: String, default: 'Open' },
   rulesNotes: { type: String, default: '' },

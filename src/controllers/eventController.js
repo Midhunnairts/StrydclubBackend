@@ -121,7 +121,8 @@ const createEvent = async (req, res) => {
     rules,
     schedule,
     organizedBy,
-    contact
+    contact,
+    venueUrl
   } = req.body;
 
   if (!title || !category || !date || !time || !location || slotsTotal === undefined) {
@@ -155,6 +156,7 @@ const createEvent = async (req, res) => {
       endTime: endTime || '',
       registrationCloses: registrationCloses || '',
       location,
+      venueUrl: venueUrl || '',
       price: Number(price) || 0,
       slotsTotal: Number(slotsTotal),
       playersPerTeam: Number(playersPerTeam) || 0,
