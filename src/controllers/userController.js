@@ -127,4 +127,31 @@ const getUserDashboard = async (req, res) => {
   }
 };
 
-module.exports = { getUserDashboard };
+const getUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    return res.status(200).json({
+      success: true,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role || 'user',
+        favoriteSports: user.favoriteSports,
+        memberSince: user.memberSince,
+        totalEvents: user.totalEvents,
+        eventsWon: user.eventsWon,
+        sportsPlayed: user.sportsPlayed
+      }
+    });
+  } catch (error) {
+    console.error(`Get user profile error: ${error.message}`);
+    return res.status(500).json({ success: false, message: 'Server error retrieving user profile' });
+  }
+};
+
+module.exports = { getUserDashboard, getUserProfile };
