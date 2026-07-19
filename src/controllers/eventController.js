@@ -1,7 +1,14 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
+const Razorpay = require('razorpay');
 const Event = require('../models/Event');
 const Registration = require('../models/Registration');
 const User = require('../models/User');
+
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET
+});
 
 const getEvents = async (req, res) => {
   const { category, search } = req.query;
@@ -223,5 +230,137 @@ const cancelRegistration = async (req, res) => {
   }
 };
 
-module.exports = { getEvents, getEventBySlug, registerForEvent, createEvent, cancelRegistration };
+const createRazorpayOrder = async (req, res) => {
+  const { slug } = req.params;
+  const userId = req.user._id;
+
+  try {
+    let event;
+    if (mongoose.Types.ObjectId.isValid(slug)) {
+      event = await Event.findById(slug);
+    } else {
+      event = await Event.findOne({ slug });
+    }
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Event not found' });
+    }
+
+    if (event.slotsFilled >= event.slotsTotal) {
+      return res.status(400).json({ success: false, message: 'Event is fully booked' });
+    }
+
+    const existingReg = await Registration.findOne({ user: userId, event: event._id });
+    if (existingReg) {
+      return res.status(400).json({ success: false, message: 'You have already registered for this event' });
+    }
+
+    // Convert price to paise (minimum 100 paise)
+    const amount = Math.round(event.price * 100);
+    if (amount < 100) {
+      return res.status(400).json({ success: false, message: 'Amount must be at least 100 paise' });
+    }
+
+    const options = {
+      amount: amount,
+      currency: 'INR',
+      receipt: event._id.toString()
+    };
+
+    const order = await razorpay.orders.create(options);
+    if (!order) {
+      return res.status(500).json({ success: false, message: 'Failed to create Razorpay order' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      order_id: order.id,
+      amount: order.amount,
+      currency: order.currency
+    });
+  } catch (error) {
+    console.error(`Create Razorpay order error: ${error.message}`);
+    if (error.statusCode === 401) {
+      return res.status(401).json({ success: false, message: 'Razorpay authentication failed' });
+    }
+    return res.status(500).json({ success: false, message: 'Server error during payment order creation' });
+  }
+};
+
+const verifyRazorpayPayment = async (req, res) => {
+  const { slug } = req.params;
+  const userId = req.user._id;
+  const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+
+  if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+    return res.status(400).json({ success: false, message: 'Missing required payment verification fields' });
+  }
+
+  try {
+    let event;
+    if (mongoose.Types.ObjectId.isValid(slug)) {
+      event = await Event.findById(slug);
+    } else {
+      event = await Event.findOne({ slug });
+    }
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Event not found' });
+    }
+
+    // Verify Signature: HMAC-SHA256(order_id + "|" + payment_id, KEY_SECRET)
+    const generated_signature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(razorpay_order_id + '|' + razorpay_payment_id)
+      .digest('hex');
+
+    if (generated_signature !== razorpay_signature) {
+      return res.status(400).json({ success: false, message: 'Signature verification failed. Payment is invalid.' });
+    }
+
+    // Double check registration to prevent race condition / duplicate registration
+    const existingReg = await Registration.findOne({ user: userId, event: event._id });
+    if (existingReg) {
+      return res.status(400).json({ success: false, message: 'You have already registered for this event' });
+    }
+
+    if (event.slotsFilled >= event.slotsTotal) {
+      return res.status(400).json({ success: false, message: 'Event is fully booked' });
+    }
+
+    // Signature matches, create registration!
+    await Registration.create({
+      user: userId,
+      event: event._id,
+      status: 'Confirmed',
+      paymentId: razorpay_payment_id,
+      orderId: razorpay_order_id
+    });
+
+    event.slotsFilled += 1;
+    event.participants.push({ name: req.user.name, role: 'Participant' });
+    await event.save();
+
+    const user = await User.findById(userId);
+    user.totalEvents += 1;
+    user.sportsPlayed = Math.max(user.sportsPlayed, 1);
+    if (!user.favoriteSports.includes(event.category)) {
+      user.favoriteSports.push(event.category);
+    }
+    await user.save();
+
+    return res.status(200).json({ success: true, message: 'Payment verified and registration successful' });
+  } catch (error) {
+    console.error(`Verify Razorpay signature error: ${error.message}`);
+    return res.status(500).json({ success: false, message: 'Server error during payment verification' });
+  }
+};
+
+module.exports = {
+  getEvents,
+  getEventBySlug,
+  registerForEvent,
+  createEvent,
+  cancelRegistration,
+  createRazorpayOrder,
+  verifyRazorpayPayment
+};
 

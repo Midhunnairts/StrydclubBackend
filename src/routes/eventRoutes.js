@@ -1,5 +1,5 @@
 const express = require('express');
-const { getEvents, getEventBySlug, registerForEvent, createEvent, cancelRegistration } = require('../controllers/eventController');
+const { getEvents, getEventBySlug, registerForEvent, createEvent, cancelRegistration, createRazorpayOrder, verifyRazorpayPayment } = require('../controllers/eventController');
 const { protect } = require('../middleware/auth');
 const router = express.Router();
 
@@ -16,5 +16,7 @@ router.post('/', protect, isAdmin, createEvent);
 router.get('/:slug', getEventBySlug);
 router.post('/:slug/register', protect, registerForEvent);
 router.post('/:slug/cancel', protect, cancelRegistration);
+router.post('/:slug/create-order', protect, createRazorpayOrder);
+router.post('/:slug/verify-payment', protect, verifyRazorpayPayment);
 
 module.exports = router;

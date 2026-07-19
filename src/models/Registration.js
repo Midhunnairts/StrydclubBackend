@@ -5,7 +5,9 @@ const registrationSchema = new mongoose.Schema({
   event: { type: mongoose.Schema.Types.ObjectId, ref: 'Event', required: true },
   status: { type: String, default: 'Confirmed' },
   result: { type: String, default: '' },
-  won: { type: Boolean, default: false }
+  won: { type: Boolean, default: false },
+  paymentId: { type: String, default: '' },
+  orderId: { type: String, default: '' }
 }, {
   timestamps: true
 });
