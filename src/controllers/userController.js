@@ -20,6 +20,8 @@ const getUserDashboard = async (req, res) => {
       if (reg.event) {
         if (reg.result) {
           past.push({
+            id: reg.event._id,
+            slug: reg.event.slug,
             title: reg.event.title,
             category: reg.event.category,
             date: reg.event.date,
@@ -28,6 +30,8 @@ const getUserDashboard = async (req, res) => {
           });
         } else {
           registered.push({
+            id: reg.event._id,
+            slug: reg.event.slug,
             title: reg.event.title,
             category: reg.event.category,
             date: reg.event.date,
@@ -39,67 +43,6 @@ const getUserDashboard = async (req, res) => {
       }
     });
 
-    if (registrations.length === 0) {
-      const defaultRegistered = [
-        {
-          title: 'Weekend 5K Marathon',
-          category: 'Running',
-          date: 'May 28, 2026',
-          time: '6:00 AM',
-          location: 'Cubbon Park, Bangalore',
-          status: 'Confirmed'
-        },
-        {
-          title: 'Friday Night Football League',
-          category: 'Football',
-          date: 'May 25, 2026',
-          time: '7:00 PM',
-          location: 'Green Field Arena, Delhi',
-          status: 'Confirmed'
-        }
-      ];
-
-      const defaultPast = [
-        {
-          title: 'Spring Badminton Championship',
-          category: 'Badminton',
-          date: 'May 15, 2026',
-          result: '2nd Place',
-          won: true
-        },
-        {
-          title: 'Urban Football League',
-          category: 'Football',
-          date: 'May 10, 2026',
-          result: 'Participant',
-          won: false
-        }
-      ];
-
-      user.totalEvents = 12;
-      user.eventsWon = 3;
-      user.sportsPlayed = 3;
-      await user.save();
-
-      return res.status(200).json({
-        success: true,
-        stats: {
-          eventsWon: user.eventsWon,
-          totalEvents: user.totalEvents,
-          winRate: '25%',
-          upcomingCount: defaultRegistered.length
-        },
-        registeredEvents: defaultRegistered,
-        pastParticipation: defaultPast,
-        profileStats: {
-          totalEvents: user.totalEvents,
-          eventsWon: user.eventsWon,
-          sportsPlayed: user.sportsPlayed,
-          memberSince: user.memberSince,
-          favoriteSports: user.favoriteSports
-        }
-      });
-    }
 
     const winRateVal = user.totalEvents > 0 ? `${((user.eventsWon / user.totalEvents) * 100).toFixed(0)}%` : '0%';
 
