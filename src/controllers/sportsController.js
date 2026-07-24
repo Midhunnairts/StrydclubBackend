@@ -8,13 +8,21 @@ const getSports = async (req, res) => {
     { name: 'Volleyball', icon: '🏐', description: 'Beach and indoor volleyball leagues for teams and individuals.', baseMembers: 1500 },
     { name: 'Pickleball', icon: '🎾', description: 'Fast-growing paddle sport that combines elements of tennis and badminton.', baseMembers: 950 },
     { name: 'Kho Kho', icon: '🎯', description: 'Traditional Indian tag sport played with speed, agility, and teamwork.', baseMembers: 1100 },
-    { name: 'Padel', icon: '🏓', description: 'Exciting court sport blending tennis and squash inside glass enclosures.', baseMembers: 650 }
+    { name: 'Padel', icon: '🏓', description: 'Exciting court sport blending tennis and squash inside glass enclosures.', baseMembers: 650 },
+    { name: 'Other', icon: '✨', description: 'Custom hosted events covering a wide variety of exciting sports.', baseMembers: 450 }
   ];
 
   try {
+    const standardCategories = ['Running', 'Badminton', 'Football', 'Volleyball', 'Pickleball', 'Kho Kho', 'Padel'];
+    
     const sportsData = await Promise.all(sportsList.map(async (sport) => {
       // Find all events for this category
-      const events = await Event.find({ category: new RegExp(`^${sport.name}$`, 'i') });
+      let events;
+      if (sport.name.toLowerCase() === 'other') {
+        events = await Event.find({ category: { $nin: standardCategories.map(c => new RegExp(`^${c}$`, 'i')) } });
+      } else {
+        events = await Event.find({ category: new RegExp(`^${sport.name}$`, 'i') });
+      }
       
       // Calculate total events count (fall back to a base number if no events exist)
       const eventsCount = events.length || 3;
