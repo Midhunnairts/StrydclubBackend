@@ -154,4 +154,29 @@ const getUserProfile = async (req, res) => {
   }
 };
 
-module.exports = { getUserDashboard, getUserProfile };
+const getPublicUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    return res.status(200).json({
+      success: true,
+      user: {
+        id: user._id,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+        favoriteSports: user.favoriteSports,
+        memberSince: user.memberSince,
+        totalEvents: user.totalEvents,
+        eventsWon: user.eventsWon,
+        sportsPlayed: user.sportsPlayed
+      }
+    });
+  } catch (error) {
+    console.error(`Get public user profile error: ${error.message}`);
+    return res.status(500).json({ success: false, message: 'Server error retrieving public user profile' });
+  }
+};
+
+module.exports = { getUserDashboard, getUserProfile, getPublicUserProfile };
