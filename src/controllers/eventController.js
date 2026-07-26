@@ -204,6 +204,21 @@ const cancelRegistration = async (req, res) => {
       return res.status(400).json({ success: false, message: 'You are not registered for this event' });
     }
 
+    let refundProcessed = false;
+    let refundDetails = null;
+
+    // If registration was paid via Razorpay, initiate refund
+    if (existingReg.paymentId) {
+      try {
+        refundDetails = await razorpay.payments.refund(existingReg.paymentId);
+        refundProcessed = true;
+        console.log(`[Razorpay Refund Initiated] Payment ID: ${existingReg.paymentId}, Refund ID: ${refundDetails.id}`);
+      } catch (refundError) {
+        console.error(`Razorpay refund error: ${refundError.message}`);
+        // Log warning and proceed with cancellation; if payment was mock/dummy or already refunded
+      }
+    }
+
     // Delete registration
     await Registration.deleteOne({ _id: existingReg._id });
 
@@ -218,12 +233,23 @@ const cancelRegistration = async (req, res) => {
 
     // Decrease user's total events count
     const user = await User.findById(userId);
-    if (user.totalEvents > 0) {
+    if (user && user.totalEvents > 0) {
       user.totalEvents -= 1;
     }
-    await user.save();
+    if (user) {
+      await user.save();
+    }
 
-    return res.status(200).json({ success: true, message: 'Successfully cancelled registration' });
+    const message = refundProcessed
+      ? `Successfully cancelled registration. A full refund of ₹${event.price} has been initiated to your original payment method.`
+      : 'Successfully cancelled registration.';
+
+    return res.status(200).json({
+      success: true,
+      message,
+      refundProcessed,
+      refundId: refundDetails ? refundDetails.id : null
+    });
   } catch (error) {
     console.error(`Cancel registration error: ${error.message}`);
     return res.status(500).json({ success: false, message: 'Server error during cancellation' });
