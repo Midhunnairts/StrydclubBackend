@@ -16,17 +16,27 @@ const getUserDashboard = async (req, res) => {
     const registered = [];
     const past = [];
 
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
     registrations.forEach(reg => {
       if (reg.event) {
-        if (reg.result) {
+        const eventDate = new Date(reg.event.date);
+        const isPastEvent = (!isNaN(eventDate.getTime()) && eventDate < now) ||
+                            reg.event.status === 'Completed' ||
+                            reg.event.status === 'completed' ||
+                            reg.event.status === 'Event Completed' ||
+                            Boolean(reg.result);
+
+        if (isPastEvent) {
           past.push({
             id: reg.event._id,
             slug: reg.event.slug,
             title: reg.event.title,
             category: reg.event.category,
             date: reg.event.date,
-            result: reg.result,
-            won: reg.won
+            result: reg.result || (reg.won ? 'Winner' : 'Completed'),
+            won: Boolean(reg.won)
           });
         } else {
           registered.push({
