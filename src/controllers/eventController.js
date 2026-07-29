@@ -31,7 +31,24 @@ const getEvents = async (req, res) => {
     const events = await Event.find(filter)
       .select('slug title category date time location status slotsFilled slotsTotal price')
       .sort({ createdAt: -1 });
-    return res.status(200).json({ success: true, events });
+
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    const updatedEvents = await Promise.all(events.map(async (event) => {
+      const eventObj = event.toObject();
+      const eventDate = new Date(event.date);
+      if (!isNaN(eventDate.getTime()) && eventDate < now) {
+        eventObj.status = 'Completed';
+        if (event.status !== 'Completed' && event.status !== 'completed' && event.status !== 'Event Completed') {
+          event.status = 'Completed';
+          await event.save();
+        }
+      }
+      return eventObj;
+    }));
+
+    return res.status(200).json({ success: true, events: updatedEvents });
   } catch (error) {
     console.error(`Get events error: ${error.message}`);
     return res.status(500).json({ success: false, message: 'Server error retrieving events' });
@@ -50,6 +67,17 @@ const getEventBySlug = async (req, res) => {
     if (!event) {
       return res.status(404).json({ success: false, message: 'Event not found' });
     }
+
+    const eventDate = new Date(event.date);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    if (!isNaN(eventDate.getTime()) && eventDate < now) {
+      if (event.status !== 'Completed' && event.status !== 'completed' && event.status !== 'Event Completed') {
+        event.status = 'Completed';
+        await event.save();
+      }
+    }
+
     return res.status(200).json({ success: true, event });
   } catch (error) {
     console.error(`Get event by slug or ID error: ${error.message}`);
