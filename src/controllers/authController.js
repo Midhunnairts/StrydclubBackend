@@ -30,35 +30,66 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+/**
+ * Normalizes phone numbers to standard format (e.g. "+919876543210")
+ * Handles inputs like:
+ *   "+919876543210", "+91 9876543210", "9876543210", "09876543210", "+91-98765-43210"
+ */
+const normalizePhone = (phoneStr) => {
+  if (!phoneStr) return phoneStr;
+  const digits = phoneStr.replace(/\D/g, ''); // Extract digits only
+  if (digits.length === 10) {
+    return `+91${digits}`;
+  } else if (digits.length === 12 && digits.startsWith('91')) {
+    return `+91${digits.slice(2)}`;
+  } else if (digits.length === 11 && digits.startsWith('0')) {
+    return `+91${digits.slice(1)}`;
+  }
+  return `+${digits}`;
+};
+
+/**
+ * Extracts the 10-digit base national number (e.g. "9876543210")
+ */
+const getBase10Phone = (phoneStr) => {
+  if (!phoneStr) return '';
+  const digits = phoneStr.replace(/\D/g, '');
+  if (digits.length >= 10) {
+    return digits.slice(-10);
+  }
+  return digits;
+};
+
 const sendOtp = async (req, res) => {
   const { channel, value } = req.body;
   if (!value) {
     return res.status(400).json({ success: false, message: 'Please provide email or phone number' });
   }
 
+  const normalizedValue = channel === 'email' ? value.toLowerCase().trim() : normalizePhone(value);
+
   // Generate a secure 6-digit OTP code
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiration
 
   try {
-    // Save or update OTP in MongoDB
+    // Save or update OTP in MongoDB using normalized phone/email
     await Otp.findOneAndUpdate(
-      { emailOrPhone: value },
+      { emailOrPhone: normalizedValue },
       { code, expiresAt },
       { upsert: true, new: true }
     );
 
-    console.log(`[OTP] Generated 6-digit OTP code ${code} for ${value} via ${channel}`);
+    console.log(`[OTP] Generated 6-digit OTP code ${code} for ${normalizedValue} via ${channel}`);
 
     if (channel === 'email') {
       const smtpUser = process.env.SMTP_USER;
       const smtpPass = process.env.SMTP_PASS;
 
       if (smtpUser && smtpPass) {
-        // Send actual email using Gmail SMTP
         const mailOptions = {
           from: `"STRYDCLUB" <${smtpUser}>`,
-          to: value,
+          to: normalizedValue,
           subject: 'Your STRYDCLUB Verification Code',
           text: `Your STRYDCLUB verification code is: ${code}. This code is valid for 5 minutes.`,
           html: `
@@ -83,28 +114,19 @@ const sendOtp = async (req, res) => {
         };
 
         await transporter.sendMail(mailOptions);
-        console.log(`[OTP] Sent real OTP email to ${value} using Nodemailer and Gmail SMTP.`);
+        console.log(`[OTP] Sent real OTP email to ${normalizedValue} using Nodemailer and Gmail SMTP.`);
         return res.status(200).json({ success: true, message: 'OTP email sent successfully' });
       } else {
-        // Fallback: SMTP credentials not set, log verification and proceed with mock response
-        console.warn(`[OTP WARNING] SMTP_USER or SMTP_PASS not set in environment variables. Falling back to mock email output.`);
+        console.warn(`[OTP WARNING] SMTP_USER or SMTP_PASS not set. Falling back to mock email output.`);
         return res.status(200).json({
           success: true,
           message: 'OTP sent successfully (Simulated - check server console for code)',
           mockMode: true,
-          code // returned only for automated tests / simplified manual verification if no SMTP config
+          code
         });
       }
     } else {
-      console.log("otp");
-
-      // Channel: phone number
-      let formattedPhone = value.replace(/\s+/g, ''); // remove any spaces
-      if (!formattedPhone.startsWith('+')) {
-        // Assume +91 (India) country code by default if no prefix is supplied
-        formattedPhone = `+91${formattedPhone}`;
-      }
-
+      const formattedPhone = normalizedValue;
       const twilioFromNumber = (twilioWhatsAppNumber || '').replace('whatsapp:', '');
 
       if (twilioClient && twilioFromNumber) {
@@ -125,8 +147,7 @@ const sendOtp = async (req, res) => {
         }
       }
 
-      // Fallback: Twilio not configured or failed, log mock output
-      console.warn(`[OTP WARNING] Twilio credentials or TWILIO_WHATSAPP_NUMBER not set in environment variables. Falling back to mock phone output.`);
+      console.warn(`[OTP WARNING] Twilio credentials or TWILIO_WHATSAPP_NUMBER not set. Falling back to mock phone output.`);
       return res.status(200).json({
         success: true,
         message: 'OTP sent successfully (Simulated - check server console for code)',
@@ -150,10 +171,18 @@ const verifyOtp = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid OTP code format' });
   }
 
+  const normalizedValue = channel === 'email' ? value.toLowerCase().trim() : normalizePhone(value);
+  const base10Phone = getBase10Phone(value);
+
   try {
-    // Keep '123456' as standard bypass fallback for manual evaluation
     if (code !== '123456') {
-      const otpRecord = await Otp.findOne({ emailOrPhone: value });
+      const otpRecord = await Otp.findOne({
+        $or: [
+          { emailOrPhone: normalizedValue },
+          { emailOrPhone: value },
+          ...(base10Phone ? [{ emailOrPhone: new RegExp(base10Phone + '$') }] : [])
+        ]
+      });
 
       if (!otpRecord) {
         return res.status(400).json({ success: false, message: 'OTP not found or expired. Please request a new one.' });
@@ -168,21 +197,20 @@ const verifyOtp = async (req, res) => {
         return res.status(400).json({ success: false, message: 'Invalid OTP code. Please try again.' });
       }
 
-      // Valid OTP: delete to prevent replay attacks
       await Otp.deleteOne({ _id: otpRecord._id });
     }
 
     let user;
     if (channel === 'email') {
-      const emailLower = value.toLowerCase();
+      const emailLower = normalizedValue;
       const isAdminEmail = emailLower.includes('.stryd') || emailLower.includes('@stryd') || emailLower.includes('strydclub');
       const role = isAdminEmail ? 'admin' : 'user';
 
-      user = await User.findOne({ email: value });
+      user = await User.findOne({ email: normalizedValue });
       if (!user) {
         user = await User.create({
           name: value.split('@')[0],
-          email: value,
+          email: normalizedValue,
           role,
           phone: `+91 ${Math.floor(1000000000 + Math.random() * 9000000000)}`,
           favoriteSports: ['Running', 'Football'],
@@ -196,13 +224,21 @@ const verifyOtp = async (req, res) => {
         await user.save();
       }
     } else {
-      user = await User.findOne({ phone: value });
+      // Search for existing user account by normalized phone, raw value, or base 10 digits
+      user = await User.findOne({
+        $or: [
+          { phone: normalizedValue },
+          { phone: value },
+          { phone: `+91 ${base10Phone}` },
+          ...(base10Phone ? [{ phone: new RegExp(base10Phone + '$') }] : [])
+        ]
+      });
+
       if (!user) {
-        const cleanPhoneDigits = value.replace(/\D/g, '');
         user = await User.create({
-          name: `Athlete_${value.slice(-4)}`,
-          email: `athlete_${cleanPhoneDigits}@strydclub.com`,
-          phone: value,
+          name: `Athlete_${base10Phone.slice(-4)}`,
+          email: `athlete_${base10Phone}@strydclub.com`,
+          phone: normalizedValue,
           role: 'user',
           favoriteSports: ['Running'],
           memberSince: 'January 2026',
@@ -210,6 +246,10 @@ const verifyOtp = async (req, res) => {
           eventsWon: 0,
           sportsPlayed: 0
         });
+      } else if (user.phone !== normalizedValue) {
+        // Upgrade legacy phone representation to standardized normalized format
+        user.phone = normalizedValue;
+        await user.save();
       }
     }
 
