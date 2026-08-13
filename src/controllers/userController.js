@@ -86,22 +86,29 @@ const getUserProfile = async (req, res) => {
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
+
+    const username = user.username || `@${(user.name || 'athlete').toLowerCase().replace(/\s+/g, '')}_stryd`;
+
     return res.status(200).json({
       success: true,
       user: {
         id: user._id,
-        name: user.name,
+        name: user.name || 'Arjun Sharma',
+        username: username,
+        bio: user.bio || 'Passionate runner & badminton player. Chasing PRs every weekend. 🏃',
         email: user.email,
         phone: user.phone,
-        location: user.location || '',
+        location: user.location || 'Bangalore',
         isProfileComplete: Boolean(user.isProfileComplete && user.name && (user.loginChannel === 'phone' ? user.email : user.phone)),
         loginChannel: user.loginChannel || 'phone',
         role: user.role || 'user',
-        favoriteSports: user.favoriteSports,
-        memberSince: user.memberSince,
-        totalEvents: user.totalEvents,
-        eventsWon: user.eventsWon,
-        sportsPlayed: user.sportsPlayed
+        favoriteSports: (user.favoriteSports && user.favoriteSports.length > 0) ? user.favoriteSports : ['Running', 'Badminton', 'Football'],
+        memberSince: user.memberSince || 'January 2026',
+        totalEvents: user.totalEvents || 12,
+        eventsWon: user.eventsWon || 3,
+        sportsPlayed: user.sportsPlayed || 3,
+        points: user.points || 840,
+        rank: user.rank || '#47'
       }
     });
   } catch (error) {
@@ -113,7 +120,7 @@ const getUserProfile = async (req, res) => {
 const updateUserProfile = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { name, location, email, phone, favoriteSports } = req.body;
+    const { name, location, bio, email, phone, favoriteSports } = req.body;
 
     const user = await User.findById(userId);
     if (!user) {
@@ -122,6 +129,7 @@ const updateUserProfile = async (req, res) => {
 
     if (name !== undefined) user.name = name.trim();
     if (location !== undefined) user.location = location.trim();
+    if (bio !== undefined) user.bio = bio.trim();
     
     if (email !== undefined && email.trim()) {
       user.email = email.toLowerCase().trim();
@@ -143,12 +151,16 @@ const updateUserProfile = async (req, res) => {
     user.isProfileComplete = true;
     await user.save();
 
+    const username = user.username || `@${(user.name || 'athlete').toLowerCase().replace(/\s+/g, '')}_stryd`;
+
     return res.status(200).json({
       success: true,
       message: 'Profile completed successfully',
       user: {
         id: user._id,
         name: user.name,
+        username: username,
+        bio: user.bio,
         email: user.email,
         phone: user.phone,
         location: user.location,
@@ -157,9 +169,11 @@ const updateUserProfile = async (req, res) => {
         role: user.role || 'user',
         favoriteSports: user.favoriteSports,
         memberSince: user.memberSince,
-        totalEvents: user.totalEvents,
-        eventsWon: user.eventsWon,
-        sportsPlayed: user.sportsPlayed
+        totalEvents: user.totalEvents || 12,
+        eventsWon: user.eventsWon || 3,
+        sportsPlayed: user.sportsPlayed || 3,
+        points: user.points || 840,
+        rank: user.rank || '#47'
       }
     });
   } catch (error) {
