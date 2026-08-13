@@ -93,6 +93,9 @@ const getUserProfile = async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
+        location: user.location || '',
+        isProfileComplete: Boolean(user.isProfileComplete && user.name && (user.loginChannel === 'phone' ? user.email : user.phone)),
+        loginChannel: user.loginChannel || 'phone',
         role: user.role || 'user',
         favoriteSports: user.favoriteSports,
         memberSince: user.memberSince,
@@ -104,6 +107,64 @@ const getUserProfile = async (req, res) => {
   } catch (error) {
     console.error(`Get user profile error: ${error.message}`);
     return res.status(500).json({ success: false, message: 'Server error retrieving user profile' });
+  }
+};
+
+const updateUserProfile = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { name, location, email, phone, favoriteSports } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (name !== undefined) user.name = name.trim();
+    if (location !== undefined) user.location = location.trim();
+    
+    if (email !== undefined && email.trim()) {
+      user.email = email.toLowerCase().trim();
+    }
+    
+    if (phone !== undefined && phone.trim()) {
+      const digits = phone.replace(/\D/g, '');
+      if (digits.length === 10) {
+        user.phone = `+91${digits}`;
+      } else {
+        user.phone = phone.trim();
+      }
+    }
+
+    if (Array.isArray(favoriteSports)) {
+      user.favoriteSports = favoriteSports;
+    }
+
+    user.isProfileComplete = true;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile completed successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        location: user.location,
+        isProfileComplete: true,
+        loginChannel: user.loginChannel,
+        role: user.role || 'user',
+        favoriteSports: user.favoriteSports,
+        memberSince: user.memberSince,
+        totalEvents: user.totalEvents,
+        eventsWon: user.eventsWon,
+        sportsPlayed: user.sportsPlayed
+      }
+    });
+  } catch (error) {
+    console.error(`Update user profile error: ${error.message}`);
+    return res.status(500).json({ success: false, message: error.message || 'Server error updating profile' });
   }
 };
 
@@ -119,6 +180,7 @@ const getPublicUserProfile = async (req, res) => {
         id: user._id,
         name: user.name,
         avatarUrl: user.avatarUrl,
+        location: user.location || '',
         favoriteSports: user.favoriteSports,
         memberSince: user.memberSince,
         totalEvents: user.totalEvents,
@@ -132,4 +194,4 @@ const getPublicUserProfile = async (req, res) => {
   }
 };
 
-module.exports = { getUserDashboard, getUserProfile, getPublicUserProfile };
+module.exports = { getUserDashboard, getUserProfile, updateUserProfile, getPublicUserProfile };
