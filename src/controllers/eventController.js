@@ -29,7 +29,7 @@ const getEvents = async (req, res) => {
 
   try {
     const events = await Event.find(filter)
-      .select('slug title category date time location status slotsFilled slotsTotal price')
+      .select('slug title category date time location status slotsFilled slotsTotal price bannerUrl')
       .sort({ createdAt: -1 });
 
     const now = new Date();
