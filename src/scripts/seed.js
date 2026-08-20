@@ -278,7 +278,7 @@ const seedData = async () => {
           { name: 'Samantha Ruth', role: 'Participant' },
           { name: 'Rashmika Mandanna', role: 'Participant' }
         ],
-        organizedBy: 'Strydclub Padel',
+        organizedBy: 'Strydclub Cricket',
         contact: '+91 98765 12345'
       }
     ]);

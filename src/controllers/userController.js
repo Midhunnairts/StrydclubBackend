@@ -93,22 +93,22 @@ const getUserProfile = async (req, res) => {
       success: true,
       user: {
         id: user._id,
-        name: user.name || 'Arjun Sharma',
+        name: user.name || '',
         username: username,
-        bio: user.bio || 'Passionate runner & badminton player. Chasing PRs every weekend. 🏃',
-        email: user.email,
-        phone: user.phone,
-        location: user.location || 'Bangalore',
+        bio: user.bio || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        location: user.location || '',
         isProfileComplete: Boolean(user.isProfileComplete && user.name && (user.loginChannel === 'phone' ? user.email : user.phone)),
         loginChannel: user.loginChannel || 'phone',
         role: user.role || 'user',
-        favoriteSports: (user.favoriteSports && user.favoriteSports.length > 0) ? user.favoriteSports : ['Running', 'Badminton', 'Football'],
+        favoriteSports: user.favoriteSports || [],
         memberSince: user.memberSince || 'January 2026',
-        totalEvents: user.totalEvents || 12,
-        eventsWon: user.eventsWon || 3,
-        sportsPlayed: user.sportsPlayed || 3,
-        points: user.points || 840,
-        rank: user.rank || '#47'
+        totalEvents: user.totalEvents || 0,
+        eventsWon: user.eventsWon || 0,
+        sportsPlayed: user.sportsPlayed || 0,
+        points: user.points || 0,
+        rank: user.rank || ''
       }
     });
   } catch (error) {
@@ -167,13 +167,13 @@ const updateUserProfile = async (req, res) => {
         isProfileComplete: true,
         loginChannel: user.loginChannel,
         role: user.role || 'user',
-        favoriteSports: user.favoriteSports,
-        memberSince: user.memberSince,
-        totalEvents: user.totalEvents || 12,
-        eventsWon: user.eventsWon || 3,
-        sportsPlayed: user.sportsPlayed || 3,
-        points: user.points || 840,
-        rank: user.rank || '#47'
+        favoriteSports: user.favoriteSports || [],
+        memberSince: user.memberSince || 'January 2026',
+        totalEvents: user.totalEvents || 0,
+        eventsWon: user.eventsWon || 0,
+        sportsPlayed: user.sportsPlayed || 0,
+        points: user.points || 0,
+        rank: user.rank || ''
       }
     });
   } catch (error) {
