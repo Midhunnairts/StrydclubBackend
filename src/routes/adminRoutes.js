@@ -7,7 +7,8 @@ const {
   getAdminUsers,
   toggleUserRole,
   deleteEvent,
-  updateEvent
+  updateEvent,
+  getAdminAnalytics
 } = require('../controllers/adminController');
 const { protect } = require('../middleware/auth');
 
@@ -29,5 +30,6 @@ router.put('/events/:id', protect, isAdmin, updateEvent);
 router.delete('/events/:id', protect, isAdmin, deleteEvent);
 router.get('/users', protect, isAdmin, getAdminUsers);
 router.post('/users/:id/role', protect, isAdmin, toggleUserRole);
+router.get('/analytics', protect, isAdmin, getAdminAnalytics);
 
 module.exports = router;
