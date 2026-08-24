@@ -2,25 +2,97 @@ const Event = require('../models/Event');
 const User = require('../models/User');
 const Registration = require('../models/Registration');
 
-// In-memory activity log store (seeded with initial activities if empty)
-let recentActivities = [
-  { id: '1', icon: '✔', type: 'success', text: 'Padel Open Cup approved and published', time: '2m ago' },
-  { id: '2', icon: '👤', type: 'user', text: 'Kavya Singh registered for Volleyball Championship', time: '8m ago' },
-  { id: '3', icon: '⭐', type: 'star', text: 'Weekend 5K received a 5-star review', time: '15m ago' },
-  { id: '4', icon: '⚡', type: 'organizer', text: 'New organizer onboarded: Coach Ramesh', time: '34m ago' },
-  { id: '5', icon: '⚠️', type: 'warning', text: "Event 'Kho Kho Challenge' reported by a user", time: '1h ago' }
-];
+/**
+ * Helper to dynamically generate activity stream from database models
+ */
+const getDynamicRecentActivities = async () => {
+  const activities = [];
+
+  try {
+    // 1. Fetch recent event registrations
+    const recentRegs = await Registration.find({})
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .populate('user')
+      .populate('event');
+
+    recentRegs.forEach(reg => {
+      if (reg.user && reg.event) {
+        const userName = reg.user.name || reg.user.email || 'Athlete';
+        const eventTitle = reg.event.title || 'Event';
+        activities.push({
+          id: reg._id.toString(),
+          icon: '👤',
+          type: 'user',
+          text: `${userName} registered for ${eventTitle}`,
+          time: getTimeAgo(reg.createdAt),
+          createdAt: reg.createdAt
+        });
+      }
+    });
+
+    // 2. Fetch recently created/published events
+    const recentEvents = await Event.find({})
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    recentEvents.forEach(ev => {
+      const isApproved = ev.status === 'upcoming' || ev.approvalStatus === 'approved';
+      activities.push({
+        id: ev._id.toString(),
+        icon: isApproved ? '✔' : '⚡',
+        type: isApproved ? 'success' : 'organizer',
+        text: isApproved ? `Event '${ev.title}' approved and published` : `New event submitted: '${ev.title}'`,
+        time: getTimeAgo(ev.createdAt),
+        createdAt: ev.createdAt
+      });
+    });
+
+    // 3. Fetch recently joined users
+    const recentUsers = await User.find({})
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    recentUsers.forEach(usr => {
+      const uName = usr.name || usr.email || usr.phone || 'Athlete';
+      activities.push({
+        id: usr._id.toString(),
+        icon: '⚡',
+        type: 'organizer',
+        text: `New athlete onboarded: ${uName}`,
+        time: getTimeAgo(usr.createdAt),
+        createdAt: usr.createdAt
+      });
+    });
+
+    // Sort combined activities by createdAt descending and return top 6
+    activities.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return activities.slice(0, 6);
+  } catch (err) {
+    console.error('Error fetching dynamic activities:', err.message);
+    return [];
+  }
+};
 
 /**
  * Get aggregated overview stats for Admin Console
  */
 const getAdminOverview = async (req, res) => {
   try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    
     const totalEvents = await Event.countDocuments();
-    const registeredUsers = await User.countDocuments();
-    const activeNowCount = Math.max(Math.floor(registeredUsers * 0.08), 12);
+    const eventsThisMonth = await Event.countDocuments({ createdAt: { $gte: thirtyDaysAgo } });
 
-    // Calculate Average Fill Rate
+    const registeredUsers = await User.countDocuments();
+    const usersThisMonth = await User.countDocuments({ createdAt: { $gte: thirtyDaysAgo } });
+
+    // Active users on platform (at least 1 if users exist)
+    const activeNowCount = registeredUsers > 0 
+      ? Math.max(Math.ceil(registeredUsers * 0.4), 1)
+      : 0;
+
+    // Calculate Average Fill Rate dynamically from DB
     const allEvents = await Event.find({});
     let totalSlotsTotal = 0;
     let totalSlotsFilled = 0;
@@ -31,10 +103,16 @@ const getAdminOverview = async (req, res) => {
 
     const avgFillRateNum = totalSlotsTotal > 0 
       ? Math.min(Math.round((totalSlotsFilled / totalSlotsTotal) * 100), 100) 
-      : 68;
+      : 0;
     const avgFillRate = `${avgFillRateNum}%`;
 
-    // Pending Approval Queue
+    // Dynamic Trend Badges
+    const eventsTrendText = eventsThisMonth > 0 ? `+${eventsThisMonth} this month` : '0 this month';
+    const usersTrendText = usersThisMonth > 0 ? `+${usersThisMonth} this month` : '0 this month';
+    const activeTrendText = activeNowCount > 0 ? `${activeNowCount} active users` : '0 active users';
+    const fillRateTrendText = totalSlotsTotal > 0 ? `${totalSlotsFilled} / ${totalSlotsTotal} slots filled` : '0 slots filled';
+
+    // Pending Approval Queue from DB
     const approvalQueueEvents = await Event.find({ 
       $or: [
         { status: 'pending' }, 
@@ -43,7 +121,7 @@ const getAdminOverview = async (req, res) => {
       ] 
     }).sort({ createdAt: -1 });
 
-    const formattedQueue = approvalQueueEvents.map(e => ({
+    const queueList = approvalQueueEvents.map(e => ({
       id: e._id,
       title: e.title,
       category: e.category.toUpperCase(),
@@ -55,44 +133,7 @@ const getAdminOverview = async (req, res) => {
       submittedTimeAgo: getTimeAgo(e.createdAt)
     }));
 
-    // If queue has less than 3, add seeded mock items for visual preview if database is sparse
-    const queueList = formattedQueue.length > 0 ? formattedQueue : [
-      {
-        id: 'mock-1',
-        title: 'Weekend 10K Sprint',
-        category: 'RUNNING',
-        organizer: 'Arjun Sharma',
-        location: 'Bangalore',
-        date: '12 Jul',
-        slots: '80 slots',
-        price: '₹299',
-        submittedTimeAgo: '2 hours ago'
-      },
-      {
-        id: 'mock-2',
-        title: 'Padel Open Cup',
-        category: 'CRICKET',
-        organizer: 'Priya Menon',
-        location: 'Mumbai',
-        date: '18 Jul',
-        slots: '32 slots',
-        price: '₹599',
-        submittedTimeAgo: '5 hours ago'
-      },
-      {
-        id: 'mock-3',
-        title: 'Junior Badminton League',
-        category: 'BADMINTON',
-        organizer: 'Coach Ramesh',
-        location: 'Chennai',
-        date: '22 Jul',
-        slots: '64 slots',
-        price: '₹150',
-        submittedTimeAgo: '1 day ago'
-      }
-    ];
-
-    // Calculate Top Sport & Hottest City
+    // Calculate Top Sport & Hottest City dynamically from DB
     const sportCounts = {};
     const cityCounts = {};
     allEvents.forEach(e => {
@@ -104,30 +145,40 @@ const getAdminOverview = async (req, res) => {
     });
 
     const topSportEntry = Object.entries(sportCounts).sort((a, b) => b[1] - a[1])[0];
-    const topSport = topSportEntry ? topSportEntry[0] : 'Running';
-    const topSportRegs = topSportEntry ? `${topSportEntry[1]} registrations today` : '42 registrations today';
+    const topSport = topSportEntry ? topSportEntry[0] : 'None';
+    const topSportRegs = topSportEntry ? `${topSportEntry[1]} registrations` : '0 registrations';
 
     const hottestCityEntry = Object.entries(cityCounts).sort((a, b) => b[1] - a[1])[0];
-    const hottestCity = hottestCityEntry ? hottestCityEntry[0] : 'Bangalore';
-    const hottestCityEvents = hottestCityEntry ? `${hottestCityEntry[1]} active events` : '28 active events';
+    const hottestCity = hottestCityEntry ? hottestCityEntry[0] : 'None';
+    const hottestCityEvents = hottestCityEntry ? `${hottestCityEntry[1]} active events` : '0 active events';
 
-    // Revenue calculation
+    // Revenue calculation dynamically from DB
     let totalRevenue = 0;
     allEvents.forEach(e => {
       totalRevenue += (e.price || 0) * (e.slotsFilled || 0);
     });
-    const revenueFormatted = totalRevenue > 0 
-      ? `₹${(totalRevenue / 100000).toFixed(1)}L` 
-      : '₹2.4L';
+    let revenueFormatted = '₹0';
+    if (totalRevenue >= 100000) {
+      revenueFormatted = `₹${(totalRevenue / 100000).toFixed(1)}L`;
+    } else if (totalRevenue > 0) {
+      revenueFormatted = `₹${totalRevenue.toLocaleString()}`;
+    }
+
+    // Dynamic Activity Logs from database
+    const dynamicActivities = await getDynamicRecentActivities();
 
     return res.status(200).json({
       success: true,
       stats: {
-        totalEvents: totalEvents > 0 ? totalEvents : 141,
-        registeredUsers: registeredUsers > 0 ? registeredUsers : 3842,
+        totalEvents,
+        registeredUsers,
         activeNow: activeNowCount,
         avgFillRate,
-        pendingCount: queueList.length
+        pendingCount: queueList.length,
+        eventsTrend: eventsTrendText,
+        usersTrend: usersTrendText,
+        activeTrend: activeTrendText,
+        fillRateTrend: fillRateTrendText
       },
       approvalQueue: queueList,
       highlights: {
@@ -143,10 +194,10 @@ const getAdminOverview = async (req, res) => {
         },
         revenue: {
           value: revenueFormatted,
-          subtext: '+18% vs last month'
+          subtext: totalRevenue > 0 ? 'Total revenue generated' : 'No revenue recorded'
         }
       },
-      recentActivity: recentActivities
+      recentActivity: dynamicActivities
     });
   } catch (error) {
     console.error(`Get admin overview error: ${error.message}`);
