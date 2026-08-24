@@ -1,9 +1,16 @@
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  phone: { type: String, required: true, unique: true },
+  name: { type: String, default: '' },
+  email: { type: String, default: null, sparse: true },
+  phone: { type: String, default: null, sparse: true },
+  location: { type: String, default: '' },
+  bio: { type: String, default: '' },
+  username: { type: String, default: '' },
+  points: { type: Number, default: 0 },
+  rank: { type: String, default: '' },
+  isProfileComplete: { type: Boolean, default: false },
+  loginChannel: { type: String, enum: ['phone', 'email'], default: 'phone' },
   avatarUrl: { type: String, default: '' },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
   favoriteSports: [{ type: String }],

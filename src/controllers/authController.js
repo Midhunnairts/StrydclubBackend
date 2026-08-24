@@ -201,6 +201,8 @@ const verifyOtp = async (req, res) => {
     }
 
     let user;
+    let isNewUser = false;
+
     if (channel === 'email') {
       const emailLower = normalizedValue;
       const isAdminEmail = emailLower.includes('.stryd') || emailLower.includes('@stryd') || emailLower.includes('strydclub');
@@ -208,12 +210,16 @@ const verifyOtp = async (req, res) => {
 
       user = await User.findOne({ email: normalizedValue });
       if (!user) {
+        isNewUser = true;
         user = await User.create({
-          name: value.split('@')[0],
+          name: '',
           email: normalizedValue,
+          phone: null,
+          location: '',
+          loginChannel: 'email',
+          isProfileComplete: false,
           role,
-          phone: `+91 ${Math.floor(1000000000 + Math.random() * 9000000000)}`,
-          favoriteSports: ['Running', 'Football'],
+          favoriteSports: [],
           memberSince: 'January 2026',
           totalEvents: 0,
           eventsWon: 0,
@@ -235,12 +241,16 @@ const verifyOtp = async (req, res) => {
       });
 
       if (!user) {
+        isNewUser = true;
         user = await User.create({
-          name: `Athlete_${base10Phone.slice(-4)}`,
-          email: `athlete_${base10Phone}@strydclub.com`,
+          name: '',
+          email: null,
           phone: normalizedValue,
+          location: '',
+          loginChannel: 'phone',
+          isProfileComplete: false,
           role: 'user',
-          favoriteSports: ['Running'],
+          favoriteSports: [],
           memberSince: 'January 2026',
           totalEvents: 0,
           eventsWon: 0,
@@ -258,11 +268,15 @@ const verifyOtp = async (req, res) => {
     return res.status(200).json({
       success: true,
       token,
+      isNewUser,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
         phone: user.phone,
+        location: user.location || '',
+        isProfileComplete: Boolean(user.isProfileComplete && user.name && (user.loginChannel === 'phone' ? user.email : user.phone)),
+        loginChannel: user.loginChannel || channel,
         role: user.role || 'user',
         favoriteSports: user.favoriteSports,
         memberSince: user.memberSince,

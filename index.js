@@ -14,8 +14,9 @@ const app = express();
 // Enable Cross-Origin Resource Sharing (CORS) for Angular Frontend
 app.use(cors());
 
-// Parse incoming application/json requests
-app.use(express.json());
+// Parse incoming application/json requests with 10mb payload limit for image uploads
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // REST Route Modules Mounting
 app.use('/api/auth', require('./src/routes/authRoutes'));
