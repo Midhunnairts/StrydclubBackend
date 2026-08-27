@@ -1,14 +1,124 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
-const Razorpay = require('razorpay');
+const twilio = require('twilio');
+const nodemailer = require('nodemailer');
 const Event = require('../models/Event');
 const Registration = require('../models/Registration');
 const User = require('../models/User');
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET
-});
+const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
+const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+16093079161';
+
+let twilioClient = null;
+if (twilioAccountSid && twilioAuthToken) {
+  twilioClient = twilio(twilioAccountSid, twilioAuthToken);
+}
+
+/**
+ * Send WhatsApp, SMS, and Email registration confirmation notifications
+ */
+const sendRegistrationNotification = async (user, event) => {
+  if (!user || !event) return;
+
+  const athleteName = user.name || 'Athlete';
+  const eventTitle = event.title || 'Sports Event';
+  const eventDate = event.date || 'Upcoming';
+  const eventTime = event.time || '';
+  const eventLocation = event.location || 'Strydclub Venue';
+  const priceText = event.price > 0 ? `₹${event.price}` : 'Free';
+
+  // 1. Send WhatsApp / SMS via Twilio
+  const rawPhone = user.phone;
+  if (rawPhone) {
+    const digits = rawPhone.replace(/\D/g, '');
+    let formattedPhone = digits;
+    if (digits.length === 10) {
+      formattedPhone = `+91${digits}`;
+    } else if (!formattedPhone.startsWith('+')) {
+      formattedPhone = `+${digits}`;
+    }
+
+    const whatsappMessage = `🎉 *REGISTRATION CONFIRMED!* 🎉\n\nHi *${athleteName}*,\n\nYou have successfully registered for *${eventTitle}* on *STRYDCLUB*! 🏆\n\n📅 *Date:* ${eventDate}\n⏰ *Time:* ${eventTime}\n📍 *Venue:* ${eventLocation}\n💰 *Fee:* ${priceText}\n\nGet ready to elevate your performance! See you at the venue. 🏃‍♂️✨\n\n- *Team STRYDCLUB*`;
+
+    if (twilioClient) {
+      const waFrom = twilioWhatsAppNumber.startsWith('whatsapp:') ? twilioWhatsAppNumber : `whatsapp:${twilioWhatsAppNumber}`;
+      const waTo = `whatsapp:${formattedPhone}`;
+
+      try {
+        await twilioClient.messages.create({
+          body: whatsappMessage,
+          from: waFrom,
+          to: waTo
+        });
+        console.log(`[WhatsApp Notification] Sent WhatsApp registration confirmation to ${waTo} for event '${eventTitle}'`);
+      } catch (waErr) {
+        console.warn(`[WhatsApp Warning] ${waErr.message}. Attempting SMS fallback...`);
+        try {
+          const smsFrom = twilioWhatsAppNumber.replace('whatsapp:', '');
+          await twilioClient.messages.create({
+            body: `STRYDCLUB: Hi ${athleteName}, your registration for '${eventTitle}' on ${eventDate} at ${eventLocation} is CONFIRMED! See you there!`,
+            from: smsFrom,
+            to: formattedPhone
+          });
+          console.log(`[SMS Notification] Sent SMS registration confirmation to ${formattedPhone}`);
+        } catch (smsErr) {
+          console.error(`[SMS Error] ${smsErr.message}`);
+        }
+      }
+    } else {
+      console.log(`[WhatsApp Notification (Simulated)] Target: ${formattedPhone}\n${whatsappMessage}`);
+    }
+  }
+
+  // 2. Send Email Confirmation if SMTP is configured
+  if (user.email && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    try {
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        }
+      });
+
+      const mailOptions = {
+        from: `"STRYDCLUB" <${process.env.SMTP_USER}>`,
+        to: user.email,
+        subject: `🎉 Registration Confirmed: ${eventTitle} - STRYDCLUB`,
+        html: `
+          <div style="font-family: 'Inter', system-ui, sans-serif; background-color: #0b0c0e; color: #ffffff; padding: 40px; border-radius: 16px; max-width: 550px; margin: 0 auto; border: 1px solid rgba(255, 255, 255, 0.1);">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="font-size: 28px; font-weight: 900; letter-spacing: -0.04em; color: #ffffff; margin: 0; text-transform: uppercase;">STRYD<span style="color: #ff3b30;">CLUB</span></h1>
+              <p style="font-size: 14px; color: #a0a0a0; margin: 5px 0 0 0;">Event Registration Confirmation</p>
+            </div>
+            <div style="background-color: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 24px;">
+              <h2 style="color: #30d158; font-size: 20px; margin-top: 0;">🎉 You're All Set, ${athleteName}!</h2>
+              <p style="font-size: 15px; color: #d1d1d6; line-height: 1.5;">Your spot for <strong>${eventTitle}</strong> is officially reserved.</p>
+              
+              <hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.08); margin: 20px 0;" />
+              
+              <div style="font-size: 14px; color: #a0a0a0; line-height: 1.8;">
+                <div>📅 <strong>Date:</strong> <span style="color: #ffffff;">${eventDate}</span></div>
+                <div>⏰ <strong>Time:</strong> <span style="color: #ffffff;">${eventTime}</span></div>
+                <div>📍 <strong>Location:</strong> <span style="color: #ffffff;">${eventLocation}</span></div>
+                <div>💰 <strong>Fee:</strong> <span style="color: #ffffff;">${priceText}</span></div>
+              </div>
+            </div>
+            <div style="text-align: center; margin-top: 30px; font-size: 12px; color: #606060;">
+              <p style="margin: 0;">&copy; 2026 STRYDCLUB. Elevate Your Performance.</p>
+            </div>
+          </div>
+        `
+      };
+
+      await transporter.sendMail(mailOptions);
+      console.log(`[Email Notification] Sent confirmation email to ${user.email}`);
+    } catch (emailErr) {
+      console.error(`[Email Error] ${emailErr.message}`);
+    }
+  }
+};
 
 const getEvents = async (req, res) => {
   const { category, search } = req.query;
@@ -127,6 +237,9 @@ const registerForEvent = async (req, res) => {
       user.favoriteSports.push(event.category);
     }
     await user.save();
+
+    // Trigger WhatsApp & Email confirmation notification to registered user
+    sendRegistrationNotification(user, event).catch(err => console.error(`[Notification Warning] ${err.message}`));
 
     return res.status(200).json({ success: true, message: 'Successfully registered for event' });
   } catch (error) {
@@ -452,6 +565,9 @@ const verifyCashfreePayment = async (req, res) => {
       user.favoriteSports.push(event.category);
     }
     await user.save();
+
+    // Trigger WhatsApp & Email confirmation notification to registered user
+    sendRegistrationNotification(user, event).catch(err => console.error(`[Notification Warning] ${err.message}`));
 
     return res.status(200).json({ success: true, message: 'Cashfree payment verified and registration successful' });
   } catch (error) {
