@@ -24,6 +24,7 @@ app.use('/api/events', require('./src/routes/eventRoutes'));
 app.use('/api/users', require('./src/routes/userRoutes'));
 app.use('/api/community', require('./src/routes/communityRoutes'));
 app.use('/api/sports', require('./src/routes/sportsRoutes'));
+app.use('/api/admin', require('./src/routes/adminRoutes'));
 
 // Server Health Endpoint
 app.get('/', (req, res) => {

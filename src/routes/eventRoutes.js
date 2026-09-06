@@ -1,5 +1,13 @@
 const express = require('express');
-const { getEvents, getEventBySlug, registerForEvent, createEvent, cancelRegistration, createRazorpayOrder, verifyRazorpayPayment } = require('../controllers/eventController');
+const { 
+  getEvents, 
+  getEventBySlug, 
+  registerForEvent, 
+  createEvent, 
+  cancelRegistration, 
+  createCashfreeOrder, 
+  verifyCashfreePayment 
+} = require('../controllers/eventController');
 const { protect } = require('../middleware/auth');
 const router = express.Router();
 
@@ -16,7 +24,10 @@ router.post('/', protect, isAdmin, createEvent);
 router.get('/:slug', getEventBySlug);
 router.post('/:slug/register', protect, registerForEvent);
 router.post('/:slug/cancel', protect, cancelRegistration);
-router.post('/:slug/create-order', protect, createRazorpayOrder);
-router.post('/:slug/verify-payment', protect, verifyRazorpayPayment);
+router.post('/:slug/cashfree-order', protect, createCashfreeOrder);
+router.post('/:slug/verify-cashfree', protect, verifyCashfreePayment);
+// Backward compatibility
+router.post('/:slug/create-order', protect, createCashfreeOrder);
+router.post('/:slug/verify-payment', protect, verifyCashfreePayment);
 
 module.exports = router;
