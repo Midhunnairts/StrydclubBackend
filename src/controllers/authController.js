@@ -127,23 +127,52 @@ const sendOtp = async (req, res) => {
       }
     } else {
       const formattedPhone = normalizedValue;
-      const twilioFromNumber = (twilioWhatsAppNumber || '').replace('whatsapp:', '');
+      const twilioSmsFrom = process.env.TWILIO_PHONE_NUMBER || (process.env.TWILIO_WHATSAPP_NUMBER || '').replace('whatsapp:', '');
+      const waEnvVal = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+18142613196';
+      const twilioWaFrom = waEnvVal.startsWith('whatsapp:') ? waEnvVal : `whatsapp:${waEnvVal}`;
+      const formattedWaTo = `whatsapp:${formattedPhone}`;
 
-      if (twilioClient && twilioFromNumber) {
-        try {
-          await twilioClient.messages.create({
-            body: `Your STRYDCLUB verification code is: ${code}. It is valid for 5 minutes.`,
-            from: twilioFromNumber,
-            to: formattedPhone
-          });
+      const otpBody = `Your STRYDCLUB verification code is: ${code}. It is valid for 5 minutes.`;
 
-          console.log(`[OTP] Sent real Twilio SMS OTP to ${formattedPhone} successfully.`);
+      let sentSms = false;
+      let sentWa = false;
+
+      if (twilioClient) {
+        // 1. Send SMS via Twilio
+        if (twilioSmsFrom) {
+          try {
+            await twilioClient.messages.create({
+              body: otpBody,
+              from: twilioSmsFrom,
+              to: formattedPhone
+            });
+            console.log(`[OTP] Sent real Twilio SMS OTP to ${formattedPhone} successfully.`);
+            sentSms = true;
+          } catch (smsErr) {
+            console.error(`[Twilio SMS Error] Failed to send SMS: ${smsErr.message}`);
+          }
+        }
+
+        // 2. Send WhatsApp via Twilio
+        if (twilioWaFrom) {
+          try {
+            await twilioClient.messages.create({
+              body: `💬 *STRYDCLUB Security Code*\n\nYour verification code is: *${code}*\n\nThis code is valid for 5 minutes. Do not share it with anyone.`,
+              from: twilioWaFrom,
+              to: formattedWaTo
+            });
+            console.log(`[OTP] Sent real Twilio WhatsApp OTP to ${formattedWaTo} successfully.`);
+            sentWa = true;
+          } catch (waErr) {
+            console.error(`[Twilio WhatsApp Error] Failed to send WhatsApp: ${waErr.message}`);
+          }
+        }
+
+        if (sentSms || sentWa) {
           return res.status(200).json({
             success: true,
-            message: 'OTP sent successfully via SMS'
+            message: `OTP sent successfully via ${sentSms && sentWa ? 'SMS and WhatsApp' : (sentSms ? 'SMS' : 'WhatsApp')}`
           });
-        } catch (twilioError) {
-          console.error(`[Twilio Error] Failed to send via Twilio SMS: ${twilioError.message}. Falling back to simulation.`);
         }
       }
 

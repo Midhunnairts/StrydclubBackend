@@ -6,7 +6,8 @@ const {
   createEvent, 
   cancelRegistration, 
   createCashfreeOrder, 
-  verifyCashfreePayment 
+  verifyCashfreePayment,
+  getPublicStats
 } = require('../controllers/eventController');
 const { protect } = require('../middleware/auth');
 const router = express.Router();
@@ -20,6 +21,7 @@ const isAdmin = (req, res, next) => {
 };
 
 router.get('/', getEvents);
+router.get('/stats', getPublicStats);
 router.post('/', protect, isAdmin, createEvent);
 router.get('/:slug', getEventBySlug);
 router.post('/:slug/register', protect, registerForEvent);

@@ -1,42 +1,50 @@
 const Event = require('../models/Event');
+const Registration = require('../models/Registration');
 
 const getSports = async (req, res) => {
   const sportsList = [
-    { name: 'Running', icon: '🏃', description: 'From 5K sprints to full marathons, join runners pushing their limits.', baseMembers: 2400 },
-    { name: 'Badminton', icon: '🏸', description: 'Singles and doubles tournaments for all skill levels.', baseMembers: 1800 },
-    { name: 'Football', icon: '⚽', description: 'High-intensity leagues and casual matches for football fans.', baseMembers: 3200 },
-    { name: 'Volleyball', icon: '🏐', description: 'Beach and indoor volleyball leagues for teams and individuals.', baseMembers: 1500 },
-    { name: 'Pickleball', icon: '🎾', description: 'Fast-growing paddle sport that combines elements of tennis and badminton.', baseMembers: 950 },
-    { name: 'Kho Kho', icon: '🎯', description: 'Traditional Indian tag sport played with speed, agility, and teamwork.', baseMembers: 1100 },
-    { name: 'Cricket', icon: '🏏', description: 'Matches, tournaments, and net practice for cricket enthusiasts.', baseMembers: 650 },
-    { name: 'Other', icon: '✨', description: 'Custom hosted events covering a wide variety of exciting sports.', baseMembers: 450 }
+    { name: 'Running', icon: '🏃', description: 'From 5K sprints to full marathons, join runners pushing their limits.' },
+    { name: 'Badminton', icon: '🏸', description: 'Singles and doubles tournaments for all skill levels.' },
+    { name: 'Football', icon: '⚽', description: 'High-intensity leagues and casual matches for football fans.' },
+    { name: 'Volleyball', icon: '🏐', description: 'Beach and indoor volleyball leagues for teams and individuals.' },
+    { name: 'Pickleball', icon: '🏓', description: 'Fast-growing paddle sport that combines elements of tennis and badminton.' },
+    { name: 'Kho Kho', icon: '🏃‍♂️', description: 'Traditional Indian tag sport played with speed, agility, and teamwork.' },
+    { name: 'Cricket', icon: '🏏', description: 'Matches, tournaments, and net practice for cricket enthusiasts.' },
+    { name: 'Other', icon: '✨', description: 'Custom hosted events covering a wide variety of exciting sports.' }
   ];
 
   try {
     const standardCategories = ['Running', 'Badminton', 'Football', 'Volleyball', 'Pickleball', 'Kho Kho', 'Cricket'];
 
     const sportsData = await Promise.all(sportsList.map(async (sport) => {
-      // Find all events for this category
       let events;
+
       if (sport.name.toLowerCase() === 'other') {
-        events = await Event.find({ category: { $nin: standardCategories.map(c => new RegExp(`^${c}$`, 'i')) } });
+        const regexList = standardCategories.map(c => new RegExp(`^${c}$`, 'i'));
+        events = await Event.find({ category: { $nin: regexList } });
       } else {
-        events = await Event.find({ category: new RegExp(`^${sport.name}$`, 'i') });
+        const regex = new RegExp(`^${sport.name}$`, 'i');
+        events = await Event.find({ category: regex });
       }
 
-      // Calculate total events count (fall back to a base number if no events exist)
-      const eventsCount = events.length || 0;
+      const eventsCount = events.length;
+      const eventIds = events.map(e => e._id);
 
-      // Calculate members count = base members + slots filled
+      // Find unique registered users for events of this sport category
+      const registeredUserIds = eventIds.length > 0
+        ? await Registration.find({ event: { $in: eventIds } }).distinct('user')
+        : [];
+
+      // Total slots filled across events of this sport category
       const slotsFilledSum = events.reduce((sum, e) => sum + (e.slotsFilled || 0), 0);
-      const membersCount = sport.baseMembers + slotsFilledSum;
 
-      // Find the next upcoming event
+      // Members count represents total members registered for events in this sport
+      const membersCount = Math.max(registeredUserIds.length, slotsFilledSum);
+
+      // Find next upcoming event
       let nextEvent = null;
       if (events.length > 0) {
-        // Sort events by date ascending
         const sortedEvents = events.sort((a, b) => new Date(a.date) - new Date(b.date));
-        // Find first event that has date in the future or is today
         const upcomingEvent = sortedEvents.find(e => new Date(e.date) >= new Date()) || sortedEvents[0];
         if (upcomingEvent) {
           nextEvent = {
