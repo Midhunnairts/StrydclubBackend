@@ -10,15 +10,17 @@ const getLeaderboard = async (req, res) => {
     // Map database users to leaderboard format
     let leaderboard = users.map((user, index) => {
       // Calculate XP score
-      const xpPoints = (user.totalEvents * 150) + (user.eventsWon * 500);
+      const xpPoints = ((user.totalEvents || 0) * 150) + ((user.eventsWon || 0) * 500);
+      const uName = user.name || user.email || user.phone || 'Athlete';
       return {
+        id: user._id,
         rank: index + 1,
-        name: user.name,
+        name: uName,
         sport: user.favoriteSports && user.favoriteSports.length > 0 ? user.favoriteSports[0] : 'Sports',
         points: `${xpPoints.toLocaleString()} XP`,
-        eventsCount: `${user.totalEvents} Events`,
-        winsCount: user.eventsWon,
-        initials: user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+        eventsCount: `${user.totalEvents || 0} Events`,
+        winsCount: user.eventsWon || 0,
+        initials: uName.split(' ').map(n => n[0] || '').join('').toUpperCase().slice(0, 2)
       };
     });
 
