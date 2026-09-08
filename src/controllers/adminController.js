@@ -101,7 +101,7 @@ const getDynamicRecentActivities = async () => {
 const getAdminOverview = async (req, res) => {
   try {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    
+
     const totalEvents = await Event.countDocuments();
     const eventsThisMonth = await Event.countDocuments({ createdAt: { $gte: thirtyDaysAgo } });
 
@@ -109,7 +109,7 @@ const getAdminOverview = async (req, res) => {
     const usersThisMonth = await User.countDocuments({ createdAt: { $gte: thirtyDaysAgo } });
 
     // Active users on platform (at least 1 if users exist)
-    const activeNowCount = registeredUsers > 0 
+    const activeNowCount = registeredUsers > 0
       ? Math.max(Math.ceil(registeredUsers * 0.4), 1)
       : 0;
 
@@ -122,8 +122,8 @@ const getAdminOverview = async (req, res) => {
       totalSlotsFilled += (e.slotsFilled || 0);
     });
 
-    const avgFillRateNum = totalSlotsTotal > 0 
-      ? Math.min(Math.round((totalSlotsFilled / totalSlotsTotal) * 100), 100) 
+    const avgFillRateNum = totalSlotsTotal > 0
+      ? Math.min(Math.round((totalSlotsFilled / totalSlotsTotal) * 100), 100)
       : 0;
     const avgFillRate = `${avgFillRateNum}%`;
 
@@ -134,12 +134,12 @@ const getAdminOverview = async (req, res) => {
     const fillRateTrendText = totalSlotsTotal > 0 ? `${totalSlotsFilled} / ${totalSlotsTotal} slots filled` : '0 slots filled';
 
     // Pending Approval Queue from DB
-    const approvalQueueEvents = await Event.find({ 
+    const approvalQueueEvents = await Event.find({
       $or: [
-        { status: 'pending' }, 
+        { status: 'pending' },
         { status: 'Pending' },
         { approvalStatus: 'pending' }
-      ] 
+      ]
     }).sort({ createdAt: -1 });
 
     const queueList = approvalQueueEvents.map(e => ({
@@ -371,9 +371,9 @@ function getSportIcon(sportName) {
     'Badminton': '🏸',
     'Football': '⚽',
     'Volleyball': '🏐',
-    'Pickleball': '🎾',
-    'Cricket': '🏏',
-    'Kho Kho': '🏹'
+    'Pickleball': '🏓',
+    'Kho Kho': '🏃‍♂️',
+    'Cricket': '🏏'
   };
   return icons[sportName] || '🏃';
 }
@@ -446,7 +446,7 @@ const updateEvent = async (req, res) => {
 const getAdminAnalytics = async (req, res) => {
   try {
     const allEvents = await Event.find({});
-    
+
     // Default months matching screenshot
     const monthlyEvents = [
       { month: 'Jan', count: 12, heightPct: 32 },
