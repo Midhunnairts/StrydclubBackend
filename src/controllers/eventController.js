@@ -580,6 +580,26 @@ const verifyCashfreePayment = async (req, res) => {
   }
 };
 
+const knownStatesOrCountries = new Set([
+  'india', 'karnataka', 'maharashtra', 'tamil nadu', 'telangana',
+  'delhi', 'kerala', 'goa', 'gujarat', 'rajasthan', 'uttar pradesh',
+  'west bengal', 'haryana', 'punjab', 'andhra pradesh'
+]);
+
+const extractCity = (locationStr) => {
+  if (!locationStr || typeof locationStr !== 'string') return null;
+  const parts = locationStr.split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length === 0) return null;
+  if (parts.length === 1) return parts[0];
+
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (!knownStatesOrCountries.has(parts[i].toLowerCase())) {
+      return parts[i];
+    }
+  }
+  return parts[1] || parts[0];
+};
+
 const getPublicStats = async (req, res) => {
   try {
     const totalEvents = await Event.countDocuments();
@@ -589,7 +609,7 @@ const getPublicStats = async (req, res) => {
     const cityEventCounts = {};
     allEvents.forEach(e => {
       if (e.location) {
-        const city = e.location.split(',')[0].trim();
+        const city = extractCity(e.location);
         if (city) {
           cityEventCounts[city] = (cityEventCounts[city] || 0) + 1;
         }
@@ -600,7 +620,7 @@ const getPublicStats = async (req, res) => {
     const cityUserCounts = {};
     allUsers.forEach(u => {
       if (u.location) {
-        const city = u.location.split(',')[0].trim();
+        const city = extractCity(u.location);
         if (city) {
           cityUserCounts[city] = (cityUserCounts[city] || 0) + 1;
         }

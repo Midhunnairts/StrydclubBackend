@@ -2,6 +2,27 @@ const Event = require('../models/Event');
 const User = require('../models/User');
 const Registration = require('../models/Registration');
 
+const knownStatesOrCountries = new Set([
+  'india', 'karnataka', 'maharashtra', 'tamil nadu', 'telangana',
+  'delhi', 'kerala', 'goa', 'gujarat', 'rajasthan', 'uttar pradesh',
+  'west bengal', 'haryana', 'punjab', 'andhra pradesh'
+]);
+
+const extractCity = (locationStr) => {
+  if (!locationStr || typeof locationStr !== 'string') return null;
+  const parts = locationStr.split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length === 0) return null;
+  if (parts.length === 1) return parts[0];
+
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (!knownStatesOrCountries.has(parts[i].toLowerCase())) {
+      return parts[i];
+    }
+  }
+  return parts[1] || parts[0];
+};
+
+
 /**
  * Helper to dynamically generate activity stream from database models
  */
@@ -139,8 +160,8 @@ const getAdminOverview = async (req, res) => {
     allEvents.forEach(e => {
       if (e.category) sportCounts[e.category] = (sportCounts[e.category] || 0) + (e.slotsFilled || 1);
       if (e.location) {
-        const city = e.location.split(',')[0].trim();
-        cityCounts[city] = (cityCounts[city] || 0) + 1;
+        const city = extractCity(e.location);
+        if (city) cityCounts[city] = (cityCounts[city] || 0) + 1;
       }
     });
 
@@ -469,8 +490,8 @@ const getAdminAnalytics = async (req, res) => {
     const cityCounts = {};
     allEvents.forEach(e => {
       if (e.location) {
-        const city = e.location.split(',')[0].trim();
-        cityCounts[city] = (cityCounts[city] || 0) + 1;
+        const city = extractCity(e.location);
+        if (city) cityCounts[city] = (cityCounts[city] || 0) + 1;
       }
     });
 
