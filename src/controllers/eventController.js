@@ -28,7 +28,7 @@ const sendRegistrationNotification = async (user, event) => {
   const eventLocation = event.location || 'Strydclub Venue';
   const priceText = event.price > 0 ? `₹${event.price}` : 'Free';
 
-  // 1. Send WhatsApp / SMS via Twilio
+  // 1. Send WhatsApp & SMS via Twilio
   const rawPhone = user.phone;
   if (rawPhone) {
     const digits = rawPhone.replace(/\D/g, '');
@@ -40,11 +40,14 @@ const sendRegistrationNotification = async (user, event) => {
     }
 
     const whatsappMessage = `🎉 *REGISTRATION CONFIRMED!* 🎉\n\nHi *${athleteName}*,\n\nYou have successfully registered for *${eventTitle}* on *STRYDCLUB*! 🏆\n\n📅 *Date:* ${eventDate}\n⏰ *Time:* ${eventTime}\n📍 *Venue:* ${eventLocation}\n💰 *Fee:* ${priceText}\n\nGet ready to elevate your performance! See you at the venue. 🏃‍♂️✨\n\n- *Team STRYDCLUB*`;
+    const smsMessage = `STRYDCLUB: Hi ${athleteName}, your registration for '${eventTitle}' on ${eventDate} at ${eventLocation} is CONFIRMED! See you there!`;
 
     if (twilioClient) {
       const waFrom = twilioWhatsAppNumber.startsWith('whatsapp:') ? twilioWhatsAppNumber : `whatsapp:${twilioWhatsAppNumber}`;
       const waTo = `whatsapp:${formattedPhone}`;
+      const smsFrom = process.env.TWILIO_PHONE_NUMBER || twilioWhatsAppNumber.replace('whatsapp:', '');
 
+      // Send WhatsApp message
       try {
         await twilioClient.messages.create({
           body: whatsappMessage,
@@ -53,21 +56,22 @@ const sendRegistrationNotification = async (user, event) => {
         });
         console.log(`[WhatsApp Notification] Sent WhatsApp registration confirmation to ${waTo} for event '${eventTitle}'`);
       } catch (waErr) {
-        console.warn(`[WhatsApp Warning] ${waErr.message}. Attempting SMS fallback...`);
-        try {
-          const smsFrom = twilioWhatsAppNumber.replace('whatsapp:', '');
-          await twilioClient.messages.create({
-            body: `STRYDCLUB: Hi ${athleteName}, your registration for '${eventTitle}' on ${eventDate} at ${eventLocation} is CONFIRMED! See you there!`,
-            from: smsFrom,
-            to: formattedPhone
-          });
-          console.log(`[SMS Notification] Sent SMS registration confirmation to ${formattedPhone}`);
-        } catch (smsErr) {
-          console.error(`[SMS Error] ${smsErr.message}`);
-        }
+        console.error(`[WhatsApp Error] Failed to send WhatsApp: ${waErr.message}`);
+      }
+
+      // Send SMS message
+      try {
+        await twilioClient.messages.create({
+          body: smsMessage,
+          from: smsFrom,
+          to: formattedPhone
+        });
+        console.log(`[SMS Notification] Sent SMS registration confirmation to ${formattedPhone} for event '${eventTitle}'`);
+      } catch (smsErr) {
+        console.error(`[SMS Error] Failed to send SMS: ${smsErr.message}`);
       }
     } else {
-      console.log(`[WhatsApp Notification (Simulated)] Target: ${formattedPhone}\n${whatsappMessage}`);
+      console.log(`[Notification (Simulated)] Target: ${formattedPhone}\n[WhatsApp]: ${whatsappMessage}\n[SMS]: ${smsMessage}`);
     }
   }
 
@@ -231,7 +235,7 @@ const registerForEvent = async (req, res) => {
 
     const user = await User.findById(userId);
     user.totalEvents += 1;
-    
+
     user.sportsPlayed = Math.max(user.sportsPlayed, 1);
     if (!user.favoriteSports.includes(event.category)) {
       user.favoriteSports.push(event.category);
