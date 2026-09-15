@@ -243,7 +243,6 @@ const verifyOtp = async (req, res) => {
         user = await User.create({
           name: '',
           email: normalizedValue,
-          phone: null,
           location: '',
           loginChannel: 'email',
           isProfileComplete: false,
@@ -273,7 +272,6 @@ const verifyOtp = async (req, res) => {
         isNewUser = true;
         user = await User.create({
           name: '',
-          email: null,
           phone: normalizedValue,
           location: '',
           loginChannel: 'phone',
