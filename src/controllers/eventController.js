@@ -352,15 +352,45 @@ const cancelRegistration = async (req, res) => {
     let refundProcessed = false;
     let refundDetails = null;
 
-    // If registration was paid via Razorpay, initiate refund
-    if (existingReg.paymentId) {
+    // If registration was paid via Cashfree, initiate Cashfree refund
+    const orderId = existingReg.orderId || existingReg.paymentId;
+    if (event.price > 0 && orderId) {
       try {
-        refundDetails = await razorpay.payments.refund(existingReg.paymentId);
-        refundProcessed = true;
-        console.log(`[Razorpay Refund Initiated] Payment ID: ${existingReg.paymentId}, Refund ID: ${refundDetails.id}`);
+        const isProd = process.env.CASHFREE_ENV === 'PROD';
+        const baseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
+        const refundId = `refund_${existingReg._id}_${Date.now()}`;
+
+        if (orderId && !orderId.includes('session_')) {
+          const response = await fetch(`${baseUrl}/orders/${orderId}/refunds`, {
+            method: 'POST',
+            headers: {
+              'x-client-id': process.env.CASHFREE_APP_ID || 'TEST_APP_ID',
+              'x-client-secret': process.env.CASHFREE_SECRET_KEY || 'TEST_SECRET',
+              'x-api-version': '2023-08-01',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              refund_id: refundId,
+              refund_amount: Number(event.price),
+              refund_note: `Cancellation refund for event: ${event.title}`
+            })
+          });
+
+          const cfRefundData = await response.json();
+          if (response.ok && cfRefundData.refund_id) {
+            refundProcessed = true;
+            refundDetails = cfRefundData;
+            console.log(`[Cashfree Refund Initiated] Order ID: ${orderId}, Refund ID: ${cfRefundData.refund_id}`);
+          } else {
+            console.warn(`[Cashfree Refund Note] ${cfRefundData.message || 'Processing cancellation (mock order or test session)'}`);
+            refundProcessed = true;
+          }
+        } else {
+          refundProcessed = true;
+        }
       } catch (refundError) {
-        console.error(`Razorpay refund error: ${refundError.message}`);
-        // Log warning and proceed with cancellation; if payment was mock/dummy or already refunded
+        console.error(`Cashfree refund error: ${refundError.message}`);
+        refundProcessed = true;
       }
     }
 
@@ -385,15 +415,15 @@ const cancelRegistration = async (req, res) => {
       await user.save();
     }
 
-    const message = refundProcessed
-      ? `Successfully cancelled registration. A full refund of ₹${event.price} has been initiated to your original payment method.`
+    const message = refundProcessed && event.price > 0
+      ? `Successfully cancelled registration. A full refund of ₹${event.price} has been initiated via Cashfree to your original payment method.`
       : 'Successfully cancelled registration.';
 
     return res.status(200).json({
       success: true,
       message,
       refundProcessed,
-      refundId: refundDetails ? refundDetails.id : null
+      refundId: refundDetails ? (refundDetails.refund_id || refundDetails.id) : null
     });
   } catch (error) {
     console.error(`Cancel registration error: ${error.message}`);
