@@ -27,33 +27,6 @@ const getLeaderboard = async (req, res) => {
     // Fallback static data if there are less than 3 users in the database
     if (leaderboard.length < 3) {
       const fallbackData = [
-        {
-          rank: leaderboard.length + 1,
-          name: 'Amit Patel',
-          sport: 'Badminton',
-          points: '2,850 XP',
-          eventsCount: '14 Events',
-          winsCount: 5,
-          initials: 'AP'
-        },
-        {
-          rank: leaderboard.length + 2,
-          name: 'Sneha Reddy',
-          sport: 'Running',
-          points: '2,640 XP',
-          eventsCount: '12 Events',
-          winsCount: 4,
-          initials: 'SR'
-        },
-        {
-          rank: leaderboard.length + 3,
-          name: 'Rahul Sharma',
-          sport: 'Football',
-          points: '2,420 XP',
-          eventsCount: '10 Events',
-          winsCount: 3,
-          initials: 'RS'
-        }
       ];
       // Append fallbacks to make it a nice list of 5 entries
       leaderboard = [...leaderboard, ...fallbackData].slice(0, 5);
