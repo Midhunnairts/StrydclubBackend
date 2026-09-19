@@ -372,7 +372,7 @@ function getSportIcon(sportName) {
     'Football': '⚽',
     'Volleyball': '🏐',
     'Pickleball': '🏓',
-    'Kho Kho': '🏃‍♂️',
+    'Lifestyle': '🧘‍♀️',
     'Cricket': '🏏'
   };
   return icons[sportName] || '🏃';
@@ -496,13 +496,7 @@ const getAdminAnalytics = async (req, res) => {
     });
 
     let topCities = [
-      { rank: 1, name: 'Bangalore', count: 28 },
-      { rank: 2, name: 'Mumbai', count: 21 },
-      { rank: 3, name: 'Delhi', count: 18 },
-      { rank: 4, name: 'Pune', count: 12 },
-      { rank: 5, name: 'Chennai', count: 9 },
-      { rank: 6, name: 'Hyderabad', count: 8 },
-      { rank: 7, name: 'Goa', count: 5 }
+      { rank: 1, name: 'Chennai', count: 0 }
     ];
 
     if (Object.keys(cityCounts).length > 0) {

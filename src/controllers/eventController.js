@@ -684,12 +684,7 @@ const getPublicStats = async (req, res) => {
         citiesText: citiesFormatted,
         championsText: championsFormatted,
         cityList: cityList.length > 0 ? cityList : [
-          { name: 'Bangalore', membersCount: 3200, eventsCount: 145 },
-          { name: 'Mumbai', membersCount: 2800, eventsCount: 132 },
-          { name: 'Delhi', membersCount: 2500, eventsCount: 118 },
-          { name: 'Hyderabad', membersCount: 1900, eventsCount: 95 },
-          { name: 'Pune', membersCount: 1600, eventsCount: 82 },
-          { name: 'Chennai', membersCount: 1400, eventsCount: 76 }
+          { name: 'Chennai', membersCount: 0, eventsCount: 0 }
         ]
       }
     });
