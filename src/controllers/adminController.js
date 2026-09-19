@@ -372,7 +372,7 @@ function getSportIcon(sportName) {
     'Football': '⚽',
     'Volleyball': '🏐',
     'Pickleball': '🏓',
-    'Kho Kho': '🏃‍♂️',
+    'Lifestyle': '🧘‍♀️',
     'Cricket': '🏏'
   };
   return icons[sportName] || '🏃';

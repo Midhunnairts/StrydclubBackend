@@ -212,30 +212,30 @@ const seedData = async () => {
         contact: '+91 98765 87654'
       },
       {
-        slug: 'traditional-kho-kho-challenge',
-        title: 'Traditional Kho Kho Challenge',
-        category: 'Kho Kho',
-        description: 'Reconnect with your roots in this exciting, high-speed traditional chase tag format. Sprint, dodge, dive, and chase your way to victory.',
+        slug: 'weekend-wellness-lifestyle-meet',
+        title: 'Weekend Yoga & Lifestyle Retreat',
+        category: 'Lifestyle',
+        description: 'Unwind and rejuvenate with sunrise yoga, guided breathwork, sound healing, and healthy community networking.',
         date: 'June 8, 2026',
-        time: '4:00 PM',
-        location: 'Stadium, Hyderabad',
+        time: '6:30 AM',
+        location: 'Cubbon Park, Bangalore',
         status: 'upcoming',
         price: 199,
         slotsFilled: 6,
         slotsTotal: 20,
         rules: [
-          { text: 'Standard KKFI ground dimensions and rules apply' },
-          { text: 'Teams consist of 12 players (9 active, 3 substitutes)' },
-          { text: 'Chasing team must sit on the squares in alternate directions' },
-          { text: 'Chaser can only change direction by tapping a teammate\'s back (\'Kho\')' },
-          { text: 'Defenders must dodge the chaser without stepping outside bounds' }
+          { text: 'Bring your own yoga mat and comfortable activewear' },
+          { text: 'Hydration and organic herbal tea stations will be provided' },
+          { text: 'Suitable for all fitness and experience levels' },
+          { text: 'Please arrive 15 minutes prior to the start time' },
+          { text: 'Certified wellness instructors will lead every session' }
         ],
         schedule: [
-          { time: '3:30 PM', activity: 'Team Briefing & Strategic Walkthrough' },
-          { time: '4:00 PM', activity: 'Innings 1 (Match A vs Match B)' },
-          { time: '5:15 PM', activity: 'Innings 2 (Championship Placement)' },
-          { time: '6:30 PM', activity: 'Grand Finale Chase' },
-          { time: '7:00 PM', activity: 'Traditional Sweets & Prize Distribution' }
+          { time: '6:15 AM', activity: 'Arrival & Welcome Herbal Drink' },
+          { time: '6:30 AM', activity: 'Sunrise Vinyasa Yoga Session' },
+          { time: '7:30 AM', activity: 'Pranayama & Breathwork Circle' },
+          { time: '8:00 AM', activity: 'Sound Bath & Guided Meditation' },
+          { time: '8:30 AM', activity: 'Healthy Breakfast & Community Networking' }
         ],
         participants: [
           { name: 'Vivek Agnihotri', role: 'Participant' },
@@ -243,7 +243,7 @@ const seedData = async () => {
           { name: 'Pallavi Joshi', role: 'Participant' },
           { name: 'Mithun Chakraborty', role: 'Participant' }
         ],
-        organizedBy: 'Strydclub Hyderabad',
+        organizedBy: 'Strydclub Wellness',
         contact: '+91 98765 98765'
       },
       {
