@@ -420,7 +420,7 @@ const updateEvent = async (req, res) => {
   const updateData = req.body;
   try {
     if (!id.startsWith('mock-')) {
-      const event = await Event.findByIdAndUpdate(id, updateData, { new: true });
+      const event = await Event.findByIdAndUpdate(id, updateData, { returnDocument: 'after' });
       if (event) {
         recentActivities.unshift({
           id: Date.now().toString(),
@@ -437,6 +437,122 @@ const updateEvent = async (req, res) => {
   } catch (error) {
     console.error(`Update event error: ${error.message}`);
     return res.status(500).json({ success: false, message: 'Failed to update event' });
+  }
+};
+
+/**
+ * Manually sync a Cashfree order ID and register user if paid
+ */
+const syncCashfreeOrder = async (req, res) => {
+  const { order_id } = req.body;
+  if (!order_id) {
+    return res.status(400).json({ success: false, message: 'Please provide a valid Cashfree order_id' });
+  }
+
+  try {
+    const envVal = (process.env.CASHFREE_ENV || '').trim().toUpperCase();
+    const isProd = envVal === 'PROD' || envVal === 'PRODUCTION' || envVal === 'LIVE';
+    const baseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
+
+    const cfHeaders = {
+      'x-client-id': process.env.CASHFREE_APP_ID || 'TEST_APP_ID',
+      'x-client-secret': process.env.CASHFREE_SECRET_KEY || 'TEST_SECRET',
+      'x-api-version': '2023-08-01'
+    };
+
+    const response = await fetch(`${baseUrl}/orders/${order_id}`, {
+      method: 'GET',
+      headers: cfHeaders
+    });
+    const cfData = await response.json();
+
+    if (!response.ok) {
+      return res.status(404).json({ success: false, message: cfData.message || 'Order not found in Cashfree' });
+    }
+
+    let isPaid = cfData.order_status === 'PAID';
+    if (!isPaid) {
+      const paymentsRes = await fetch(`${baseUrl}/orders/${order_id}/payments`, {
+        method: 'GET',
+        headers: cfHeaders
+      });
+      if (paymentsRes.ok) {
+        const paymentsData = await paymentsRes.json();
+        if (Array.isArray(paymentsData) && paymentsData.some(p => p.payment_status === 'SUCCESS')) {
+          isPaid = true;
+        }
+      }
+    }
+
+    if (!isPaid) {
+      return res.status(400).json({ success: false, message: `Cashfree order status is ${cfData.order_status} (Not PAID)` });
+    }
+
+    // Extract User and Event
+    const userId = cfData.customer_details?.customer_id;
+    let eventId = null;
+
+    if (order_id.startsWith('order_')) {
+      const parts = order_id.split('_');
+      if (parts.length >= 2 && mongoose.Types.ObjectId.isValid(parts[1])) {
+        eventId = parts[1];
+      }
+    }
+
+    if (!eventId || !userId) {
+      return res.status(400).json({ success: false, message: 'Could not extract eventId or userId from order details' });
+    }
+
+    const event = await Event.findById(eventId);
+    const user = await User.findById(userId);
+
+    if (!event || !user) {
+      return res.status(404).json({ success: false, message: 'Associated Event or User not found in database' });
+    }
+
+    const existingReg = await Registration.findOne({ user: user._id, event: event._id });
+    if (existingReg) {
+      return res.status(200).json({ success: true, message: `User ${user.name || user.phone} is ALREADY registered for '${event.title}'`, registration: existingReg });
+    }
+
+    const newReg = await Registration.create({
+      user: user._id,
+      event: event._id,
+      status: 'Confirmed',
+      paymentId: `cf_pay_${Date.now()}`,
+      orderId: order_id
+    });
+
+    const participantName = user.name && user.name.trim() !== '' ? user.name : (user.phone || user.email || 'Athlete');
+    const alreadyInParticipants = event.participants.some(
+      p => (p.userId && p.userId.toString() === user._id.toString()) || (p.name === participantName)
+    );
+
+    if (!alreadyInParticipants) {
+      event.participants.push({
+        userId: user._id,
+        name: participantName,
+        role: 'Participant'
+      });
+    }
+    event.slotsFilled += 1;
+    await event.save();
+
+    user.totalEvents += 1;
+    user.sportsPlayed = Math.max(user.sportsPlayed, 1);
+    if (!user.favoriteSports.includes(event.category)) {
+      user.favoriteSports.push(event.category);
+    }
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Successfully synced order ${order_id}! Registered ${participantName} for event '${event.title}'.`,
+      registration: newReg
+    });
+  } catch (error) {
+    console.error(`Sync Cashfree order error: ${error.message}`);
+    return res.status(500).json({ success: false, message: error.message || 'Server error syncing Cashfree order' });
   }
 };
 
@@ -533,5 +649,6 @@ module.exports = {
   toggleUserRole,
   deleteEvent,
   updateEvent,
+  syncCashfreeOrder,
   getAdminAnalytics
 };

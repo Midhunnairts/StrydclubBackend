@@ -7,6 +7,7 @@ const {
   cancelRegistration, 
   createCashfreeOrder, 
   verifyCashfreePayment,
+  handleCashfreeWebhook,
   getPublicStats
 } = require('../controllers/eventController');
 const { protect } = require('../middleware/auth');
@@ -22,6 +23,8 @@ const isAdmin = (req, res, next) => {
 
 router.get('/', getEvents);
 router.get('/stats', getPublicStats);
+router.post('/cashfree-webhook', handleCashfreeWebhook);
+router.post('/webhook', handleCashfreeWebhook);
 router.post('/', protect, isAdmin, createEvent);
 router.get('/:slug', getEventBySlug);
 router.post('/:slug/register', protect, registerForEvent);

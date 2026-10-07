@@ -83,7 +83,8 @@ const sendRegistrationNotification = async (user, event) => {
         auth: {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS
-        }
+        },
+        family: 4
       });
 
       const mailOptions = {
@@ -169,6 +170,11 @@ const getEvents = async (req, res) => {
   }
 };
 
+const isCashfreeProd = () => {
+  const env = (process.env.CASHFREE_ENV || '').trim().toUpperCase();
+  return env === 'PROD' || env === 'PRODUCTION' || env === 'LIVE';
+};
+
 const getEventBySlug = async (req, res) => {
   const { slug } = req.params;
   try {
@@ -192,7 +198,26 @@ const getEventBySlug = async (req, res) => {
       }
     }
 
-    return res.status(200).json({ success: true, event });
+    const eventObj = event.toObject();
+    eventObj.isRegistered = false;
+
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      try {
+        const token = req.headers.authorization.split(' ')[1];
+        const jwt = require('jsonwebtoken');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretjwtkeyforstrydclubauthtokens');
+        if (decoded && decoded.id) {
+          const existingReg = await Registration.findOne({ user: decoded.id, event: event._id });
+          if (existingReg) {
+            eventObj.isRegistered = true;
+          }
+        }
+      } catch (authErr) {
+        // Optional auth, ignore error
+      }
+    }
+
+    return res.status(200).json({ success: true, event: eventObj });
   } catch (error) {
     console.error(`Get event by slug or ID error: ${error.message}`);
     return res.status(500).json({ success: false, message: 'Server error retrieving event details' });
@@ -229,8 +254,17 @@ const registerForEvent = async (req, res) => {
       status: 'Confirmed'
     });
 
+    const participantName = req.user.name && req.user.name.trim() !== ''
+      ? req.user.name
+      : (req.user.phone || req.user.email || 'Athlete');
+
     event.slotsFilled += 1;
-    event.participants.push({ name: req.user.name, role: 'Participant' });
+    const alreadyInParticipants = event.participants.some(
+      p => (p.userId && p.userId.toString() === userId.toString()) || (p.name === participantName)
+    );
+    if (!alreadyInParticipants) {
+      event.participants.push({ userId, name: participantName, role: 'Participant' });
+    }
     await event.save();
 
     const user = await User.findById(userId);
@@ -461,7 +495,7 @@ const createCashfreeOrder = async (req, res) => {
     }
 
     const orderId = `order_${event._id}_${Date.now()}`;
-    const isProd = process.env.CASHFREE_ENV === 'PROD';
+    const isProd = isCashfreeProd();
     const baseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
 
     const orderPayload = {
@@ -544,7 +578,7 @@ const verifyCashfreePayment = async (req, res) => {
 
     const existingReg = await Registration.findOne({ user: userId, event: event._id });
     if (existingReg) {
-      return res.status(400).json({ success: false, message: 'You have already registered for this event' });
+      return res.status(200).json({ success: true, message: 'You are already registered for this event', alreadyRegistered: true });
     }
 
     if (event.slotsFilled >= event.slotsTotal) {
@@ -552,27 +586,48 @@ const verifyCashfreePayment = async (req, res) => {
     }
 
     // Verify status with Cashfree API if production API keys are live
-    const isProd = process.env.CASHFREE_ENV === 'PROD';
+    const isProd = isCashfreeProd();
     const baseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
 
-    let isPaymentValid = true;
-    try {
-      if (!order_id.includes(`session_`)) {
+    let isPaymentValid = false;
+    if (order_id.includes('session_')) {
+      isPaymentValid = true;
+    } else {
+      try {
+        const cfHeaders = {
+          'x-client-id': process.env.CASHFREE_APP_ID || 'TEST_APP_ID',
+          'x-client-secret': process.env.CASHFREE_SECRET_KEY || 'TEST_SECRET',
+          'x-api-version': '2023-08-01'
+        };
         const response = await fetch(`${baseUrl}/orders/${order_id}`, {
           method: 'GET',
-          headers: {
-            'x-client-id': process.env.CASHFREE_APP_ID || 'TEST_APP_ID',
-            'x-client-secret': process.env.CASHFREE_SECRET_KEY || 'TEST_SECRET',
-            'x-api-version': '2023-08-01'
-          }
+          headers: cfHeaders
         });
         const cfData = await response.json();
-        if (response.ok && cfData.order_status !== 'PAID') {
-          isPaymentValid = false;
+
+        if (response.ok) {
+          if (cfData.order_status === 'PAID') {
+            isPaymentValid = true;
+          } else {
+            // Check payments array fallback
+            const paymentsRes = await fetch(`${baseUrl}/orders/${order_id}/payments`, {
+              method: 'GET',
+              headers: cfHeaders
+            });
+            if (paymentsRes.ok) {
+              const paymentsData = await paymentsRes.json();
+              if (Array.isArray(paymentsData) && paymentsData.some(p => p.payment_status === 'SUCCESS')) {
+                isPaymentValid = true;
+              }
+            }
+          }
+        }
+      } catch (cfErr) {
+        console.warn(`Cashfree verification status check warning: ${cfErr.message}`);
+        if (!isProd) {
+          isPaymentValid = true;
         }
       }
-    } catch (cfErr) {
-      console.warn(`Cashfree verification status check bypassed for test order: ${cfErr.message}`);
     }
 
     if (!isPaymentValid) {
@@ -588,8 +643,17 @@ const verifyCashfreePayment = async (req, res) => {
       orderId: order_id
     });
 
+    const participantName = req.user.name && req.user.name.trim() !== ''
+      ? req.user.name
+      : (req.user.phone || req.user.email || 'Athlete');
+
     event.slotsFilled += 1;
-    event.participants.push({ name: req.user.name, role: 'Participant' });
+    const alreadyInParticipants = event.participants.some(
+      p => (p.userId && p.userId.toString() === userId.toString()) || (p.name === participantName)
+    );
+    if (!alreadyInParticipants) {
+      event.participants.push({ userId, name: participantName, role: 'Participant' });
+    }
     await event.save();
 
     const user = await User.findById(userId);
@@ -694,6 +758,80 @@ const getPublicStats = async (req, res) => {
   }
 };
 
+const handleCashfreeWebhook = async (req, res) => {
+  try {
+    const payload = req.body;
+    console.log(`[Cashfree Webhook Received] Event Type: ${payload?.type}`);
+
+    const orderData = payload?.data?.order;
+    const customerData = payload?.data?.customer_details;
+    const paymentData = payload?.data?.payment;
+
+    const orderId = orderData?.order_id;
+    const paymentStatus = paymentData?.payment_status || orderData?.order_status;
+    const isSuccess = payload?.type === 'PAYMENT_SUCCESS' || payload?.type === 'ORDER_PAID' || paymentStatus === 'SUCCESS' || paymentStatus === 'PAID';
+
+    if (orderId && isSuccess) {
+      let userId = customerData?.customer_id;
+      let eventId = null;
+
+      if (orderId.startsWith('order_')) {
+        const parts = orderId.split('_');
+        if (parts.length >= 2 && mongoose.Types.ObjectId.isValid(parts[1])) {
+          eventId = parts[1];
+        }
+      }
+
+      if (eventId) {
+        const event = await Event.findById(eventId);
+        let user = null;
+        if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+          user = await User.findById(userId);
+        }
+
+        if (event && user) {
+          const existingReg = await Registration.findOne({ user: user._id, event: event._id });
+          if (!existingReg) {
+            await Registration.create({
+              user: user._id,
+              event: event._id,
+              status: 'Confirmed',
+              paymentId: paymentData?.cf_payment_id ? `cf_pay_${paymentData.cf_payment_id}` : `cf_pay_${Date.now()}`,
+              orderId: orderId
+            });
+
+            const participantName = user.name && user.name.trim() !== '' ? user.name : (user.phone || user.email || 'Athlete');
+            const alreadyInParticipants = event.participants.some(
+              p => (p.userId && p.userId.toString() === user._id.toString()) || (p.name === participantName)
+            );
+            if (!alreadyInParticipants) {
+              event.participants.push({ userId: user._id, name: participantName, role: 'Participant' });
+            }
+            event.slotsFilled += 1;
+            await event.save();
+
+            user.totalEvents += 1;
+            user.sportsPlayed = Math.max(user.sportsPlayed, 1);
+            if (!user.favoriteSports.includes(event.category)) {
+              user.favoriteSports.push(event.category);
+            }
+            await user.save();
+
+            console.log(`[Cashfree Webhook Success] Auto-registered user ${participantName} (${user._id}) for '${event.title}' via Webhook`);
+            sendRegistrationNotification(user, event).catch(err => console.error(`[Notification Warning] ${err.message}`));
+          } else {
+            console.log(`[Cashfree Webhook Info] User ${user._id} is already registered for event '${event.title}'`);
+          }
+        }
+      }
+    }
+    return res.status(200).json({ success: true, message: 'Webhook processed' });
+  } catch (error) {
+    console.error(`[Cashfree Webhook Error] ${error.message}`);
+    return res.status(200).json({ success: true, message: 'Webhook error handled' });
+  }
+};
+
 module.exports = {
   getEvents,
   getEventBySlug,
@@ -702,6 +840,7 @@ module.exports = {
   cancelRegistration,
   createCashfreeOrder,
   verifyCashfreePayment,
+  handleCashfreeWebhook,
   getPublicStats
 };
 
