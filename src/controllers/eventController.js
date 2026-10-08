@@ -84,7 +84,10 @@ const sendRegistrationNotification = async (user, event) => {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS
         },
-        family: 4
+        family: 4,
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 5000
       });
 
       const mailOptions = {
@@ -498,6 +501,7 @@ const createCashfreeOrder = async (req, res) => {
     const isProd = isCashfreeProd();
     const baseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
 
+    const frontendUrl = req.headers.origin || process.env.FRONTEND_URL || 'https://strydclub.com';
     const orderPayload = {
       order_id: orderId,
       order_amount: amount,
@@ -507,6 +511,9 @@ const createCashfreeOrder = async (req, res) => {
         customer_email: req.user.email || `${userId}@strydclub.com`,
         customer_phone: req.user.phone ? req.user.phone.replace(/[^0-9]/g, '').slice(-10) : '9999999999',
         customer_name: req.user.name || 'Athlete'
+      },
+      order_meta: {
+        return_url: `${frontendUrl}/events/${event.slug}?order_id={order_id}`
       }
     };
 

@@ -2,6 +2,8 @@ const Event = require('../models/Event');
 const User = require('../models/User');
 const Registration = require('../models/Registration');
 
+const recentActivities = [];
+
 const knownStatesOrCountries = new Set([
   'india', 'karnataka', 'maharashtra', 'tamil nadu', 'telangana',
   'delhi', 'kerala', 'goa', 'gujarat', 'rajasthan', 'uttar pradesh',
