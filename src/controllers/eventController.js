@@ -565,7 +565,6 @@ const createCashfreeOrder = async (req, res) => {
 
 const verifyCashfreePayment = async (req, res) => {
   const { slug } = req.params;
-  const userId = req.user._id;
   const { order_id } = req.body;
 
   if (!order_id) {
@@ -583,20 +582,13 @@ const verifyCashfreePayment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Event not found' });
     }
 
-    const existingReg = await Registration.findOne({ user: userId, event: event._id });
-    if (existingReg) {
-      return res.status(200).json({ success: true, message: 'You are already registered for this event', alreadyRegistered: true });
-    }
-
-    if (event.slotsFilled >= event.slotsTotal) {
-      return res.status(400).json({ success: false, message: 'Event is fully booked' });
-    }
-
     // Verify status with Cashfree API if production API keys are live
     const isProd = isCashfreeProd();
     const baseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
 
     let isPaymentValid = false;
+    let cfData = null;
+
     if (order_id.includes('session_')) {
       isPaymentValid = true;
     } else {
@@ -610,7 +602,7 @@ const verifyCashfreePayment = async (req, res) => {
           method: 'GET',
           headers: cfHeaders
         });
-        const cfData = await response.json();
+        cfData = await response.json();
 
         if (response.ok) {
           if (cfData.order_status === 'PAID') {
@@ -641,29 +633,53 @@ const verifyCashfreePayment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Cashfree payment not completed or invalid.' });
     }
 
+    // Resolve user: from authenticated req.user OR from Cashfree verified customer_details
+    let user = req.user || null;
+    if (!user && cfData && cfData.customer_details) {
+      const custId = cfData.customer_details.customer_id;
+      if (custId && mongoose.Types.ObjectId.isValid(custId)) {
+        user = await User.findById(custId);
+      }
+      if (!user && cfData.customer_details.customer_phone) {
+        const phoneDigits = cfData.customer_details.customer_phone.replace(/\D/g, '').slice(-10);
+        user = await User.findOne({ phone: new RegExp(phoneDigits + '$') });
+      }
+      if (!user && cfData.customer_details.customer_email) {
+        user = await User.findOne({ email: cfData.customer_details.customer_email.toLowerCase().trim() });
+      }
+    }
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Could not associate payment with an athlete user account.' });
+    }
+
+    const existingReg = await Registration.findOne({ user: user._id, event: event._id });
+    if (existingReg) {
+      return res.status(200).json({ success: true, message: 'You are already registered for this event', alreadyRegistered: true });
+    }
+
     // Payment valid, create event registration!
     await Registration.create({
-      user: userId,
+      user: user._id,
       event: event._id,
       status: 'Confirmed',
       paymentId: `cf_pay_${Date.now()}`,
       orderId: order_id
     });
 
-    const participantName = req.user.name && req.user.name.trim() !== ''
-      ? req.user.name
-      : (req.user.phone || req.user.email || 'Athlete');
+    const participantName = user.name && user.name.trim() !== ''
+      ? user.name
+      : (user.phone || user.email || 'Athlete');
 
     event.slotsFilled += 1;
     const alreadyInParticipants = event.participants.some(
-      p => (p.userId && p.userId.toString() === userId.toString()) || (p.name === participantName)
+      p => (p.userId && p.userId.toString() === user._id.toString()) || (p.name === participantName)
     );
     if (!alreadyInParticipants) {
-      event.participants.push({ userId, name: participantName, role: 'Participant' });
+      event.participants.push({ userId: user._id, name: participantName, role: 'Participant' });
     }
     await event.save();
 
-    const user = await User.findById(userId);
     user.totalEvents += 1;
     user.sportsPlayed = Math.max(user.sportsPlayed, 1);
     if (!user.favoriteSports.includes(event.category)) {
@@ -768,15 +784,20 @@ const getPublicStats = async (req, res) => {
 const handleCashfreeWebhook = async (req, res) => {
   try {
     const payload = req.body;
-    console.log(`[Cashfree Webhook Received] Event Type: ${payload?.type}`);
+    console.log(`[Cashfree Webhook Received] Raw payload type: ${payload?.type || payload?.event || 'unknown'}`);
 
-    const orderData = payload?.data?.order;
-    const customerData = payload?.data?.customer_details;
-    const paymentData = payload?.data?.payment;
+    const orderData = payload?.data?.order || payload?.order || payload;
+    const customerData = payload?.data?.customer_details || payload?.customer_details || payload;
+    const paymentData = payload?.data?.payment || payload?.payment || payload;
 
-    const orderId = orderData?.order_id;
-    const paymentStatus = paymentData?.payment_status || orderData?.order_status;
-    const isSuccess = payload?.type === 'PAYMENT_SUCCESS' || payload?.type === 'ORDER_PAID' || paymentStatus === 'SUCCESS' || paymentStatus === 'PAID';
+    const orderId = orderData?.order_id || payload?.orderId || payload?.order_id;
+    const paymentStatus = (paymentData?.payment_status || orderData?.order_status || payload?.txStatus || '').toUpperCase();
+    const type = (payload?.type || payload?.event || '').toUpperCase();
+
+    const isSuccess = type.includes('SUCCESS') ||
+                      type.includes('PAID') ||
+                      paymentStatus === 'SUCCESS' ||
+                      paymentStatus === 'PAID';
 
     if (orderId && isSuccess) {
       let userId = customerData?.customer_id;
@@ -789,14 +810,30 @@ const handleCashfreeWebhook = async (req, res) => {
         }
       }
 
+      let event = null;
       if (eventId) {
-        const event = await Event.findById(eventId);
+        event = await Event.findById(eventId);
+      }
+      if (!event && req.params.slug) {
+        event = await Event.findOne({ slug: req.params.slug });
+      }
+
+      if (event) {
         let user = null;
         if (userId && mongoose.Types.ObjectId.isValid(userId)) {
           user = await User.findById(userId);
         }
+        if (!user && (customerData?.customer_phone || payload?.customerPhone)) {
+          const rawPhone = customerData?.customer_phone || payload?.customerPhone;
+          const phoneDigits = rawPhone.replace(/\D/g, '').slice(-10);
+          user = await User.findOne({ phone: new RegExp(phoneDigits + '$') });
+        }
+        if (!user && (customerData?.customer_email || payload?.customerEmail)) {
+          const email = (customerData?.customer_email || payload?.customerEmail).toLowerCase().trim();
+          user = await User.findOne({ email });
+        }
 
-        if (event && user) {
+        if (user) {
           const existingReg = await Registration.findOne({ user: user._id, event: event._id });
           if (!existingReg) {
             await Registration.create({
@@ -829,6 +866,8 @@ const handleCashfreeWebhook = async (req, res) => {
           } else {
             console.log(`[Cashfree Webhook Info] User ${user._id} is already registered for event '${event.title}'`);
           }
+        } else {
+          console.warn(`[Cashfree Webhook Warning] Could not find user account for order ${orderId}`);
         }
       }
     }
