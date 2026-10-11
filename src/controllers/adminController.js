@@ -1,6 +1,7 @@
 const Event = require('../models/Event');
 const User = require('../models/User');
 const Registration = require('../models/Registration');
+const { isEventOver } = require('../utils/eventUtils');
 
 const recentActivities = [];
 
@@ -304,6 +305,13 @@ const rejectEvent = async (req, res) => {
 const getAdminEvents = async (req, res) => {
   try {
     const events = await Event.find({}).sort({ createdAt: -1 });
+    const now = new Date();
+    await Promise.all(events.map(async (ev) => {
+      if (isEventOver(ev, now) && ev.status !== 'Completed' && ev.status !== 'completed' && ev.status !== 'Event Completed') {
+        ev.status = 'Completed';
+        await ev.save();
+      }
+    }));
     return res.status(200).json({ success: true, events });
   } catch (error) {
     console.error(`Get admin events error: ${error.message}`);

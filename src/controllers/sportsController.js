@@ -1,5 +1,6 @@
 const Event = require('../models/Event');
 const Registration = require('../models/Registration');
+const { isEventOver } = require('../utils/eventUtils');
 
 const getSports = async (req, res) => {
   const sportsList = [
@@ -45,7 +46,7 @@ const getSports = async (req, res) => {
       let nextEvent = null;
       if (events.length > 0) {
         const sortedEvents = events.sort((a, b) => new Date(a.date) - new Date(b.date));
-        const upcomingEvent = sortedEvents.find(e => new Date(e.date) >= new Date()) || sortedEvents[0];
+        const upcomingEvent = sortedEvents.find(e => !isEventOver(e)) || sortedEvents[0];
         if (upcomingEvent) {
           nextEvent = {
             title: upcomingEvent.title,

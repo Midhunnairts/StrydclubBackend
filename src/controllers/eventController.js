@@ -5,6 +5,7 @@ const nodemailer = require('nodemailer');
 const Event = require('../models/Event');
 const Registration = require('../models/Registration');
 const User = require('../models/User');
+const { isEventOver } = require('../utils/eventUtils');
 
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
@@ -147,16 +148,15 @@ const getEvents = async (req, res) => {
 
   try {
     const events = await Event.find(filter)
-      .select('slug title category date time location status slotsFilled slotsTotal price bannerUrl')
+      .select('slug title category date time endTime location status slotsFilled slotsTotal price bannerUrl')
       .sort({ createdAt: -1 });
 
     const now = new Date();
-    now.setHours(0, 0, 0, 0);
 
     const updatedEvents = await Promise.all(events.map(async (event) => {
       const eventObj = event.toObject();
-      const eventDate = new Date(event.date);
-      if (!isNaN(eventDate.getTime()) && eventDate < now) {
+      const isCompleted = event.status === 'Completed' || event.status === 'completed' || event.status === 'Event Completed' || isEventOver(event, now);
+      if (isCompleted) {
         eventObj.status = 'Completed';
         if (event.status !== 'Completed' && event.status !== 'completed' && event.status !== 'Event Completed') {
           event.status = 'Completed';
@@ -191,10 +191,8 @@ const getEventBySlug = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Event not found' });
     }
 
-    const eventDate = new Date(event.date);
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    if (!isNaN(eventDate.getTime()) && eventDate < now) {
+    const isCompleted = event.status === 'Completed' || event.status === 'completed' || event.status === 'Event Completed' || isEventOver(event);
+    if (isCompleted) {
       if (event.status !== 'Completed' && event.status !== 'completed' && event.status !== 'Event Completed') {
         event.status = 'Completed';
         await event.save();
@@ -202,6 +200,9 @@ const getEventBySlug = async (req, res) => {
     }
 
     const eventObj = event.toObject();
+    if (isCompleted) {
+      eventObj.status = 'Completed';
+    }
     eventObj.isRegistered = false;
 
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -481,6 +482,10 @@ const createCashfreeOrder = async (req, res) => {
     }
     if (!event) {
       return res.status(404).json({ success: false, message: 'Event not found' });
+    }
+
+    if (event.status === 'Completed' || event.status === 'completed' || event.status === 'Event Completed' || isEventOver(event)) {
+      return res.status(400).json({ success: false, message: 'This event has already concluded' });
     }
 
     if (event.slotsFilled >= event.slotsTotal) {
