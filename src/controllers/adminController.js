@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Event = require('../models/Event');
 const User = require('../models/User');
 const Registration = require('../models/Registration');
@@ -429,21 +430,25 @@ const updateEvent = async (req, res) => {
   const { id } = req.params;
   const updateData = req.body;
   try {
-    if (!id.startsWith('mock-')) {
-      const event = await Event.findByIdAndUpdate(id, updateData, { returnDocument: 'after' });
-      if (event) {
-        recentActivities.unshift({
-          id: Date.now().toString(),
-          icon: '✏️',
-          type: 'success',
-          text: `Event '${event.title}' updated by admin`,
-          time: 'Just now'
-        });
-        return res.status(200).json({ success: true, event });
-      }
+    let event = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      event = await Event.findByIdAndUpdate(id, updateData, { returnDocument: 'after' });
+    } else {
+      event = await Event.findOneAndUpdate({ slug: id }, updateData, { returnDocument: 'after' });
     }
 
-    return res.status(200).json({ success: true, event: { _id: id, ...updateData } });
+    if (event) {
+      recentActivities.unshift({
+        id: Date.now().toString(),
+        icon: '✏️',
+        type: 'success',
+        text: `Event '${event.title}' updated by admin`,
+        time: 'Just now'
+      });
+      return res.status(200).json({ success: true, event });
+    }
+
+    return res.status(404).json({ success: false, message: 'Event not found' });
   } catch (error) {
     console.error(`Update event error: ${error.message}`);
     return res.status(500).json({ success: false, message: 'Failed to update event' });
