@@ -247,30 +247,33 @@ const seedData = async () => {
         contact: '+91 98765 98765'
       },
       {
-        slug: 'padel-club-challenge',
-        title: 'Padel Club Challenge',
-        category: 'Padel',
-        description: 'Test your skills in this premium, glass-walled doubles padel sport. Rapid rallies, wall rebounds, and tactical play make this an unforgettable experience.',
+        slug: 'sunrise-surf-session',
+        title: 'Sunrise Surf Session',
+        category: 'Surfing',
+        description: 'Catch the morning ocean waves with experienced surf instructors. Enjoy clean swell, safety-guided sessions, and coastal community vibes.',
         date: 'June 25, 2026',
-        time: '6:00 PM',
-        location: 'Padel Arena, Hyderabad',
+        time: '6:00 AM',
+        endTime: '10:00 AM',
+        location: 'Covelong Beach, Chennai',
         status: 'upcoming',
-        price: 550,
-        slotsFilled: 10,
+        price: 750,
+        slotsFilled: 9,
         slotsTotal: 20,
         rules: [
-          { text: 'Matches are doubles format only; scoring is same as tennis' },
-          { text: 'Serves must be underhand and struck at or below waist level' },
-          { text: 'The ball must bounce on the ground before hitting any glass or mesh walls' },
-          { text: 'Padel rackets must have safety cords securely around the wrist' },
-          { text: 'Padel-specific non-slip shoes are highly recommended' }
+          { text: 'Slot changes are subject to availability' },
+          { text: 'Basic swimming proficiency is required' },
+          { text: 'Surfboards and safety leashes provided at venue' },
+          { text: 'Sunscreen and rashguards strongly recommended' }
         ],
         schedule: [
-          { time: '5:30 PM', activity: 'Racket Check & Court Warm-up' },
-          { time: '6:00 PM', activity: 'Round Robin matches' },
-          { time: '7:30 PM', activity: 'Quarterfinals & Semifinals' },
-          { time: '9:00 PM', activity: 'Championship Final Match' },
-          { time: '9:45 PM', activity: 'Beverages & Award Ceremony' }
+          { time: '6:00 AM', activity: 'Check-in & gear fitting' },
+          { time: '6:20 AM', activity: 'Ocean safety briefing' },
+          { time: '6:30 AM', activity: 'Slot 1 enters the water' },
+          { time: '8:30 AM', activity: 'Slot 2 enters the water' }
+        ],
+        surfingSlots: [
+          { slotNumber: 1, time: '6:30 AM', endTime: '8:00 AM', maxAttendees: 10, slotsFilled: 7 },
+          { slotNumber: 2, time: '8:30 AM', endTime: '10:00 AM', maxAttendees: 10, slotsFilled: 2 }
         ],
         participants: [
           { name: 'Nagarjuna Rao', role: 'Participant' },
@@ -278,8 +281,8 @@ const seedData = async () => {
           { name: 'Samantha Ruth', role: 'Participant' },
           { name: 'Rashmika Mandanna', role: 'Participant' }
         ],
-        organizedBy: 'Strydclub Surfing',
-        contact: '+91 98765 12345'
+        organizedBy: 'Strydclub Surf Collective',
+        contact: '+91 98765 43210'
       }
     ]);
 

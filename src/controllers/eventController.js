@@ -312,7 +312,8 @@ const createEvent = async (req, res) => {
     schedule,
     organizedBy,
     contact,
-    venueUrl
+    venueUrl,
+    surfingSlots
   } = req.body;
 
   if (!title || !category || !date || !time || !location || slotsTotal === undefined) {
@@ -355,6 +356,7 @@ const createEvent = async (req, res) => {
       slotsFilled: 0,
       rules: rules || [],
       schedule: schedule || [],
+      surfingSlots: Array.isArray(surfingSlots) ? surfingSlots : [],
       organizedBy: organizedBy || req.user.name || 'Strydclub Admin',
       contact: contact || req.user.phone || ''
     });
