@@ -230,6 +230,7 @@ const getEventBySlug = async (req, res) => {
 
 const registerForEvent = async (req, res) => {
   const { slug } = req.params;
+  const { surfingSlot, surfingSlotTime } = req.body || {};
   const userId = req.user._id;
 
   try {
@@ -255,8 +256,17 @@ const registerForEvent = async (req, res) => {
     await Registration.create({
       user: userId,
       event: event._id,
-      status: 'Confirmed'
+      status: 'Confirmed',
+      surfingSlot: surfingSlot ? Number(surfingSlot) : undefined,
+      surfingSlotTime: surfingSlotTime || ''
     });
+
+    if (surfingSlot && Array.isArray(event.surfingSlots)) {
+      const targetSlot = event.surfingSlots.find(s => s.slotNumber === Number(surfingSlot));
+      if (targetSlot) {
+        targetSlot.slotsFilled = (targetSlot.slotsFilled || 0) + 1;
+      }
+    }
 
     const participantName = req.user.name && req.user.name.trim() !== ''
       ? req.user.name
@@ -572,7 +582,7 @@ const createCashfreeOrder = async (req, res) => {
 
 const verifyCashfreePayment = async (req, res) => {
   const { slug } = req.params;
-  const { order_id } = req.body;
+  const { order_id, surfingSlot, surfingSlotTime } = req.body;
 
   if (!order_id) {
     return res.status(400).json({ success: false, message: 'Missing order_id for payment verification' });
@@ -671,8 +681,17 @@ const verifyCashfreePayment = async (req, res) => {
       event: event._id,
       status: 'Confirmed',
       paymentId: `cf_pay_${Date.now()}`,
-      orderId: order_id
+      orderId: order_id,
+      surfingSlot: surfingSlot ? Number(surfingSlot) : undefined,
+      surfingSlotTime: surfingSlotTime || ''
     });
+
+    if (surfingSlot && Array.isArray(event.surfingSlots)) {
+      const targetSlot = event.surfingSlots.find(s => s.slotNumber === Number(surfingSlot));
+      if (targetSlot) {
+        targetSlot.slotsFilled = (targetSlot.slotsFilled || 0) + 1;
+      }
+    }
 
     const participantName = user.name && user.name.trim() !== ''
       ? user.name
