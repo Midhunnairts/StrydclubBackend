@@ -10,12 +10,12 @@ const getSports = async (req, res) => {
     { name: 'Volleyball', icon: '🏐', description: 'Beach and indoor volleyball leagues for teams and individuals.' },
     { name: 'Pickleball', icon: '🏓', description: 'Fast-growing paddle sport that combines elements of tennis and badminton.' },
     { name: 'Lifestyle', icon: '🧘‍♀️', description: 'Yoga sessions, wellness retreats, cycling meets, and active lifestyle gatherings.' },
-    { name: 'Cricket', icon: '🏏', description: 'Matches, tournaments, and net practice for cricket enthusiasts.' },
+    { name: 'Surfing', icon: '🏄', description: 'Catch waves, surf sessions, and ocean adventures for all skill levels.' },
     { name: 'Other', icon: '✨', description: 'Custom hosted events covering a wide variety of exciting sports.' }
   ];
 
   try {
-    const standardCategories = ['Running', 'Badminton', 'Football', 'Volleyball', 'Pickleball', 'Lifestyle', 'Cricket'];
+    const standardCategories = ['Running', 'Badminton', 'Football', 'Volleyball', 'Pickleball', 'Lifestyle', 'Surfing'];
 
     const sportsData = await Promise.all(sportsList.map(async (sport) => {
       let events;

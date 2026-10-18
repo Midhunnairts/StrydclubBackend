@@ -384,7 +384,7 @@ function getSportIcon(sportName) {
     'Volleyball': '🏐',
     'Pickleball': '🏓',
     'Lifestyle': '🧘‍♀️',
-    'Cricket': '🏏'
+    'Surfing': '🏄'
   };
   return icons[sportName] || '🏃';
 }
