@@ -221,6 +221,63 @@ const getEventBySlug = async (req, res) => {
       }
     }
 
+    // Enrich participants with registration data (especially for surfingSlot)
+    try {
+      const registrations = await Registration.find({ event: event._id, status: 'Confirmed' }).lean();
+      const regMap = new Map();
+      registrations.forEach(r => {
+        if (r.user) regMap.set(r.user.toString(), r);
+      });
+
+      if (Array.isArray(eventObj.participants)) {
+        eventObj.participants = eventObj.participants.map(p => {
+          const reg = p.userId ? regMap.get(p.userId.toString()) : null;
+          let slot = p.surfingSlot;
+          let slotTime = p.surfingSlotTime;
+
+          if (!slot && reg && reg.surfingSlot) {
+            slot = reg.surfingSlot;
+          }
+          if (!slotTime && reg && reg.surfingSlotTime) {
+            slotTime = reg.surfingSlotTime;
+          }
+
+          // Fallback for surfing events if legacy participant has no slot assigned
+          if (eventObj.category === 'Surfing' && !slot) {
+            slot = 1;
+            slotTime = eventObj.surfingSlots?.[0]?.time ? `${eventObj.surfingSlots[0].time} – ${eventObj.surfingSlots[0].endTime || ''}` : '';
+          }
+
+          return {
+            ...p,
+            surfingSlot: slot ? Number(slot) : undefined,
+            surfingSlotTime: slotTime || ''
+          };
+        });
+
+        // Ensure any confirmed registration from Registration collection is present in participants
+        const existingUserIds = new Set(
+          eventObj.participants.filter(p => p.userId).map(p => p.userId.toString())
+        );
+        for (const reg of registrations) {
+          if (reg.user && !existingUserIds.has(reg.user.toString())) {
+            const userDoc = await User.findById(reg.user).lean();
+            if (userDoc) {
+              eventObj.participants.push({
+                userId: userDoc._id,
+                name: userDoc.name && userDoc.name.trim() !== '' ? userDoc.name : (userDoc.phone || userDoc.email || 'Athlete'),
+                role: 'Participant',
+                surfingSlot: reg.surfingSlot ? Number(reg.surfingSlot) : (eventObj.category === 'Surfing' ? 1 : undefined),
+                surfingSlotTime: reg.surfingSlotTime || ''
+              });
+            }
+          }
+        }
+      }
+    } catch (regErr) {
+      console.warn(`[getEventBySlug] Could not enrich participants with registrations: ${regErr.message}`);
+    }
+
     return res.status(200).json({ success: true, event: eventObj });
   } catch (error) {
     console.error(`Get event by slug or ID error: ${error.message}`);
@@ -277,7 +334,13 @@ const registerForEvent = async (req, res) => {
       p => (p.userId && p.userId.toString() === userId.toString()) || (p.name === participantName)
     );
     if (!alreadyInParticipants) {
-      event.participants.push({ userId, name: participantName, role: 'Participant' });
+      event.participants.push({
+        userId,
+        name: participantName,
+        role: 'Participant',
+        surfingSlot: surfingSlot ? Number(surfingSlot) : undefined,
+        surfingSlotTime: surfingSlotTime || ''
+      });
     }
     await event.save();
 
@@ -740,7 +803,13 @@ const verifyCashfreePayment = async (req, res) => {
       p => (p.userId && p.userId.toString() === user._id.toString()) || (p.name === participantName)
     );
     if (!alreadyInParticipants) {
-      event.participants.push({ userId: user._id, name: participantName, role: 'Participant' });
+      event.participants.push({
+        userId: user._id,
+        name: participantName,
+        role: 'Participant',
+        surfingSlot: surfingSlot ? Number(surfingSlot) : undefined,
+        surfingSlotTime: surfingSlotTime || ''
+      });
     }
     await event.save();
 
@@ -931,7 +1000,13 @@ const handleCashfreeWebhook = async (req, res) => {
               p => (p.userId && p.userId.toString() === user._id.toString()) || (p.name === participantName)
             );
             if (!alreadyInParticipants) {
-              event.participants.push({ userId: user._id, name: participantName, role: 'Participant' });
+              event.participants.push({
+                userId: user._id,
+                name: participantName,
+                role: 'Participant',
+                surfingSlot: surfingSlot ? Number(surfingSlot) : undefined,
+                surfingSlotTime: surfingSlotTime || ''
+              });
             }
             event.slotsFilled += 1;
             await event.save();

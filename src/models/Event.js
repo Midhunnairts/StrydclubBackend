@@ -12,7 +12,9 @@ const scheduleSchema = new mongoose.Schema({
 const participantSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   name: { type: String, required: true },
-  role: { type: String, default: 'Participant' }
+  role: { type: String, default: 'Participant' },
+  surfingSlot: { type: Number },
+  surfingSlotTime: { type: String, default: '' }
 }, { _id: false });
 
 const surfingSlotSchema = new mongoose.Schema({

@@ -44,9 +44,11 @@ const getUserDashboard = async (req, res) => {
             title: reg.event.title,
             category: reg.event.category,
             date: reg.event.date,
-            time: reg.event.time,
+            time: reg.surfingSlotTime || reg.event.time,
             location: reg.event.location,
-            status: reg.status || 'Confirmed'
+            status: reg.status || 'Confirmed',
+            surfingSlot: reg.surfingSlot,
+            surfingSlotTime: reg.surfingSlotTime || ''
           });
         }
       }
