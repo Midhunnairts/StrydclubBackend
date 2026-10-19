@@ -273,6 +273,26 @@ const getEventBySlug = async (req, res) => {
             }
           }
         }
+
+        // Ensure surfingSlots slotsFilled is dynamically and accurately computed from actual participants
+        if (Array.isArray(eventObj.surfingSlots) && eventObj.surfingSlots.length > 0) {
+          eventObj.surfingSlots = eventObj.surfingSlots.map(slot => {
+            const slotNum = slot.slotNumber;
+            const slotParticipants = eventObj.participants.filter(p => {
+              if (p.surfingSlot !== undefined && p.surfingSlot !== null) {
+                return Number(p.surfingSlot) === Number(slotNum);
+              }
+              return Number(slotNum) === 1;
+            });
+            return {
+              ...slot,
+              slotsFilled: slotParticipants.length
+            };
+          });
+        }
+
+        // Synchronize overall slotsFilled with actual participants length
+        eventObj.slotsFilled = eventObj.participants.length;
       }
     } catch (regErr) {
       console.warn(`[getEventBySlug] Could not enrich participants with registrations: ${regErr.message}`);
@@ -515,8 +535,20 @@ const cancelRegistration = async (req, res) => {
       event.slotsFilled -= 1;
     }
 
+    // Decrease slotsFilled for the specific surfing slot if applicable
+    if (existingReg.surfingSlot && Array.isArray(event.surfingSlots)) {
+      const targetSlot = event.surfingSlots.find(s => s.slotNumber === Number(existingReg.surfingSlot));
+      if (targetSlot && targetSlot.slotsFilled > 0) {
+        targetSlot.slotsFilled -= 1;
+      }
+    }
+
     // Remove user from participants list
-    event.participants = event.participants.filter(p => p.name !== req.user.name);
+    event.participants = event.participants.filter(p => {
+      if (p.userId && p.userId.toString() === userId.toString()) return false;
+      if (p.name === req.user.name) return false;
+      return true;
+    });
     await event.save();
 
     // Decrease user's total events count
