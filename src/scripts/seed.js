@@ -253,7 +253,7 @@ const seedData = async () => {
         description: 'Catch the morning ocean waves with experienced surf instructors. Enjoy clean swell, safety-guided sessions, and coastal community vibes.',
         date: 'June 25, 2026',
         time: '6:00 AM',
-        endTime: '10:00 AM',
+        endTime: '10:15 AM',
         location: 'Covelong Beach, Chennai',
         status: 'upcoming',
         price: 750,
@@ -272,8 +272,8 @@ const seedData = async () => {
           { time: '8:30 AM', activity: 'Slot 2 enters the water' }
         ],
         surfingSlots: [
-          { slotNumber: 1, time: '6:30 AM', endTime: '8:00 AM', maxAttendees: 10, slotsFilled: 7 },
-          { slotNumber: 2, time: '8:30 AM', endTime: '10:00 AM', maxAttendees: 10, slotsFilled: 2 }
+          { slotNumber: 1, time: '6:30 AM', endTime: '8:15 AM', maxAttendees: 10, slotsFilled: 7 },
+          { slotNumber: 2, time: '8:30 AM', endTime: '10:15 AM', maxAttendees: 10, slotsFilled: 2 }
         ],
         participants: [
           { name: 'Nagarjuna Rao', role: 'Participant' },
