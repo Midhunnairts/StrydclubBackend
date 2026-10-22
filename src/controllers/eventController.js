@@ -615,6 +615,22 @@ const createCashfreeOrder = async (req, res) => {
     const baseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
 
     const frontendUrl = req.headers.origin || process.env.FRONTEND_URL || 'https://strydclub.com';
+    // Cashfree order_tags values strictly allow only alphanumeric, underscores, and hyphens (no spaces, colons, or unicode dashes)
+    const safeSlotTime = surfingSlotTime
+      ? String(surfingSlotTime).replace(/\s+/g, '_').replace(/[:–—]/g, '-').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50)
+      : '';
+
+    const orderTags = {
+      eventId: event._id.toString(),
+      userId: userId.toString()
+    };
+    if (surfingSlot) {
+      orderTags.surfingSlot = String(surfingSlot);
+    }
+    if (safeSlotTime) {
+      orderTags.surfingSlotTime = safeSlotTime;
+    }
+
     const orderPayload = {
       order_id: orderId,
       order_amount: amount,
@@ -628,13 +644,10 @@ const createCashfreeOrder = async (req, res) => {
       order_meta: {
         return_url: `${frontendUrl}/events/${event.slug}?order_id={order_id}`
       },
-      order_tags: {
-        eventId: event._id.toString(),
-        userId: userId.toString(),
-        ...(surfingSlot ? { surfingSlot: String(surfingSlot) } : {}),
-        ...(surfingSlotTime ? { surfingSlotTime: String(surfingSlotTime) } : {})
-      }
+      order_tags: orderTags
     };
+
+
 
     try {
       const response = await fetch(`${baseUrl}/orders`, {
@@ -658,22 +671,19 @@ const createCashfreeOrder = async (req, res) => {
           cf_environment: isProd ? 'production' : 'sandbox'
         });
       } else {
-        console.warn(`[Cashfree API Warning] ${cfData.message || 'Falling back to sandbox order session'}`);
-        // Fallback for development/testing when keys are simulated
-        return res.status(200).json({
-          success: true,
-          order_id: orderId,
-          payment_session_id: `session_${Date.now()}`,
-          cf_environment: 'sandbox'
+        console.error(`[Cashfree Order Creation Error] Status ${response.status}:`, cfData);
+        return res.status(response.status || 400).json({
+          success: false,
+          message: cfData.message || 'Failed to create Cashfree payment order',
+          code: cfData.code || 'cashfree_order_failed'
         });
       }
     } catch (cfErr) {
       console.error(`Cashfree API connection error: ${cfErr.message}`);
-      return res.status(200).json({
-        success: true,
-        order_id: orderId,
-        payment_session_id: `session_${Date.now()}`,
-        cf_environment: 'sandbox'
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to connect to Cashfree payment gateway. Please try again.',
+        error: cfErr.message
       });
     }
   } catch (error) {
@@ -766,10 +776,18 @@ const verifyCashfreePayment = async (req, res) => {
     }
 
     // Recover slot details from order_tags if available
-    const orderTags = cfData?.order_tags || cfData?.data?.order?.order_tags;
     if (!surfingSlot && orderTags?.surfingSlot) {
       surfingSlot = orderTags.surfingSlot;
       surfingSlotTime = orderTags.surfingSlotTime || surfingSlotTime;
+    }
+
+    if (surfingSlot && Array.isArray(event.surfingSlots)) {
+      const targetSlot = event.surfingSlots.find(s => s.slotNumber === Number(surfingSlot));
+      if (targetSlot) {
+        if (!surfingSlotTime || surfingSlotTime.includes('_')) {
+          surfingSlotTime = targetSlot.time ? (targetSlot.endTime ? `${targetSlot.time} – ${targetSlot.endTime}` : targetSlot.time) : surfingSlotTime;
+        }
+      }
     }
 
     // Resolve user: from authenticated req.user OR order_tags OR Cashfree verified customer_details
@@ -1008,7 +1026,15 @@ const handleCashfreeWebhook = async (req, res) => {
           const existingReg = await Registration.findOne({ user: user._id, event: event._id });
           if (!existingReg) {
             const surfingSlot = orderTags?.surfingSlot ? Number(orderTags.surfingSlot) : undefined;
-            const surfingSlotTime = orderTags?.surfingSlotTime || '';
+            let surfingSlotTime = orderTags?.surfingSlotTime || '';
+            if (surfingSlot && Array.isArray(event.surfingSlots)) {
+              const targetSlot = event.surfingSlots.find(s => s.slotNumber === surfingSlot);
+              if (targetSlot) {
+                if (!surfingSlotTime || surfingSlotTime.includes('_')) {
+                  surfingSlotTime = targetSlot.time ? (targetSlot.endTime ? `${targetSlot.time} – ${targetSlot.endTime}` : targetSlot.time) : surfingSlotTime;
+                }
+              }
+            }
 
             await Registration.create({
               user: user._id,
