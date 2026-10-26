@@ -10,8 +10,19 @@ const scheduleSchema = new mongoose.Schema({
 }, { _id: false });
 
 const participantSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   name: { type: String, required: true },
-  role: { type: String, default: 'Participant' }
+  role: { type: String, default: 'Participant' },
+  surfingSlot: { type: Number },
+  surfingSlotTime: { type: String, default: '' }
+}, { _id: false });
+
+const surfingSlotSchema = new mongoose.Schema({
+  slotNumber: { type: Number },
+  time: { type: String, default: '' },
+  endTime: { type: String, default: '' },
+  maxAttendees: { type: Number, default: 10 },
+  slotsFilled: { type: Number, default: 0 }
 }, { _id: false });
 
 const eventSchema = new mongoose.Schema({
@@ -37,6 +48,7 @@ const eventSchema = new mongoose.Schema({
   bannerUrl: { type: String, default: '' },
   rules: [ruleSchema],
   schedule: [scheduleSchema],
+  surfingSlots: [surfingSlotSchema],
   participants: [participantSchema],
   organizedBy: { type: String, required: true },
   contact: { type: String, required: true }

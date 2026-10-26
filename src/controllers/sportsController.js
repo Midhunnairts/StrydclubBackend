@@ -1,5 +1,6 @@
 const Event = require('../models/Event');
 const Registration = require('../models/Registration');
+const { isEventOver } = require('../utils/eventUtils');
 
 const getSports = async (req, res) => {
   const sportsList = [
@@ -9,12 +10,12 @@ const getSports = async (req, res) => {
     { name: 'Volleyball', icon: '🏐', description: 'Beach and indoor volleyball leagues for teams and individuals.' },
     { name: 'Pickleball', icon: '🏓', description: 'Fast-growing paddle sport that combines elements of tennis and badminton.' },
     { name: 'Lifestyle', icon: '🧘‍♀️', description: 'Yoga sessions, wellness retreats, cycling meets, and active lifestyle gatherings.' },
-    { name: 'Cricket', icon: '🏏', description: 'Matches, tournaments, and net practice for cricket enthusiasts.' },
+    { name: 'Surfing', icon: '🏄', description: 'Catch waves, surf sessions, and ocean adventures for all skill levels.' },
     { name: 'Other', icon: '✨', description: 'Custom hosted events covering a wide variety of exciting sports.' }
   ];
 
   try {
-    const standardCategories = ['Running', 'Badminton', 'Football', 'Volleyball', 'Pickleball', 'Lifestyle', 'Cricket'];
+    const standardCategories = ['Running', 'Badminton', 'Football', 'Volleyball', 'Pickleball', 'Lifestyle', 'Surfing'];
 
     const sportsData = await Promise.all(sportsList.map(async (sport) => {
       let events;
@@ -45,7 +46,7 @@ const getSports = async (req, res) => {
       let nextEvent = null;
       if (events.length > 0) {
         const sortedEvents = events.sort((a, b) => new Date(a.date) - new Date(b.date));
-        const upcomingEvent = sortedEvents.find(e => new Date(e.date) >= new Date()) || sortedEvents[0];
+        const upcomingEvent = sortedEvents.find(e => !isEventOver(e)) || sortedEvents[0];
         if (upcomingEvent) {
           nextEvent = {
             title: upcomingEvent.title,

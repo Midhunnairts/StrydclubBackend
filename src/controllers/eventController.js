@@ -5,6 +5,7 @@ const nodemailer = require('nodemailer');
 const Event = require('../models/Event');
 const Registration = require('../models/Registration');
 const User = require('../models/User');
+const { isEventOver } = require('../utils/eventUtils');
 
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
@@ -83,7 +84,11 @@ const sendRegistrationNotification = async (user, event) => {
         auth: {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS
-        }
+        },
+        family: 4,
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 5000
       });
 
       const mailOptions = {
@@ -143,16 +148,15 @@ const getEvents = async (req, res) => {
 
   try {
     const events = await Event.find(filter)
-      .select('slug title category date time location status slotsFilled slotsTotal price bannerUrl')
+      .select('slug title category date time endTime location status slotsFilled slotsTotal price bannerUrl')
       .sort({ createdAt: -1 });
 
     const now = new Date();
-    now.setHours(0, 0, 0, 0);
 
     const updatedEvents = await Promise.all(events.map(async (event) => {
       const eventObj = event.toObject();
-      const eventDate = new Date(event.date);
-      if (!isNaN(eventDate.getTime()) && eventDate < now) {
+      const isCompleted = event.status === 'Completed' || event.status === 'completed' || event.status === 'Event Completed' || isEventOver(event, now);
+      if (isCompleted) {
         eventObj.status = 'Completed';
         if (event.status !== 'Completed' && event.status !== 'completed' && event.status !== 'Event Completed') {
           event.status = 'Completed';
@@ -169,6 +173,11 @@ const getEvents = async (req, res) => {
   }
 };
 
+const isCashfreeProd = () => {
+  const env = (process.env.CASHFREE_ENV || '').trim().toUpperCase();
+  return env === 'PROD' || env === 'PRODUCTION' || env === 'LIVE';
+};
+
 const getEventBySlug = async (req, res) => {
   const { slug } = req.params;
   try {
@@ -182,17 +191,114 @@ const getEventBySlug = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Event not found' });
     }
 
-    const eventDate = new Date(event.date);
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    if (!isNaN(eventDate.getTime()) && eventDate < now) {
+    const isCompleted = event.status === 'Completed' || event.status === 'completed' || event.status === 'Event Completed' || isEventOver(event);
+    if (isCompleted) {
       if (event.status !== 'Completed' && event.status !== 'completed' && event.status !== 'Event Completed') {
         event.status = 'Completed';
         await event.save();
       }
     }
 
-    return res.status(200).json({ success: true, event });
+    const eventObj = event.toObject();
+    if (isCompleted) {
+      eventObj.status = 'Completed';
+    }
+    eventObj.isRegistered = false;
+
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      try {
+        const token = req.headers.authorization.split(' ')[1];
+        const jwt = require('jsonwebtoken');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretjwtkeyforstrydclubauthtokens');
+        if (decoded && decoded.id) {
+          const existingReg = await Registration.findOne({ user: decoded.id, event: event._id });
+          if (existingReg) {
+            eventObj.isRegistered = true;
+          }
+        }
+      } catch (authErr) {
+        // Optional auth, ignore error
+      }
+    }
+
+    // Enrich participants with registration data (especially for surfingSlot)
+    try {
+      const registrations = await Registration.find({ event: event._id, status: 'Confirmed' }).lean();
+      const regMap = new Map();
+      registrations.forEach(r => {
+        if (r.user) regMap.set(r.user.toString(), r);
+      });
+
+      if (Array.isArray(eventObj.participants)) {
+        eventObj.participants = eventObj.participants.map(p => {
+          const reg = p.userId ? regMap.get(p.userId.toString()) : null;
+          let slot = p.surfingSlot;
+          let slotTime = p.surfingSlotTime;
+
+          if (!slot && reg && reg.surfingSlot) {
+            slot = reg.surfingSlot;
+          }
+          if (!slotTime && reg && reg.surfingSlotTime) {
+            slotTime = reg.surfingSlotTime;
+          }
+
+          // Fallback for surfing events if legacy participant has no slot assigned
+          if (eventObj.category === 'Surfing' && !slot) {
+            slot = 1;
+            slotTime = eventObj.surfingSlots?.[0]?.time ? `${eventObj.surfingSlots[0].time} – ${eventObj.surfingSlots[0].endTime || ''}` : '';
+          }
+
+          return {
+            ...p,
+            surfingSlot: slot ? Number(slot) : undefined,
+            surfingSlotTime: slotTime || ''
+          };
+        });
+
+        // Ensure any confirmed registration from Registration collection is present in participants
+        const existingUserIds = new Set(
+          eventObj.participants.filter(p => p.userId).map(p => p.userId.toString())
+        );
+        for (const reg of registrations) {
+          if (reg.user && !existingUserIds.has(reg.user.toString())) {
+            const userDoc = await User.findById(reg.user).lean();
+            if (userDoc) {
+              eventObj.participants.push({
+                userId: userDoc._id,
+                name: userDoc.name && userDoc.name.trim() !== '' ? userDoc.name : (userDoc.phone || userDoc.email || 'Athlete'),
+                role: 'Participant',
+                surfingSlot: reg.surfingSlot ? Number(reg.surfingSlot) : (eventObj.category === 'Surfing' ? 1 : undefined),
+                surfingSlotTime: reg.surfingSlotTime || ''
+              });
+            }
+          }
+        }
+
+        // Ensure surfingSlots slotsFilled is dynamically and accurately computed from actual participants
+        if (Array.isArray(eventObj.surfingSlots) && eventObj.surfingSlots.length > 0) {
+          eventObj.surfingSlots = eventObj.surfingSlots.map(slot => {
+            const slotNum = slot.slotNumber;
+            const slotParticipants = eventObj.participants.filter(p => {
+              if (p.surfingSlot !== undefined && p.surfingSlot !== null) {
+                return Number(p.surfingSlot) === Number(slotNum);
+              }
+              return Number(slotNum) === 1;
+            });
+            return {
+              ...slot,
+              slotsFilled: slotParticipants.length
+            };
+          });
+        }
+
+        // Synchronize overall slotsFilled with actual participants length
+        eventObj.slotsFilled = eventObj.participants.length;
+      }
+    } catch (regErr) {
+      console.warn(`[getEventBySlug] Could not enrich participants with registrations: ${regErr.message}`);
+    }
+
+    return res.status(200).json({ success: true, event: eventObj });
   } catch (error) {
     console.error(`Get event by slug or ID error: ${error.message}`);
     return res.status(500).json({ success: false, message: 'Server error retrieving event details' });
@@ -201,6 +307,7 @@ const getEventBySlug = async (req, res) => {
 
 const registerForEvent = async (req, res) => {
   const { slug } = req.params;
+  const { surfingSlot, surfingSlotTime } = req.body || {};
   const userId = req.user._id;
 
   try {
@@ -226,11 +333,35 @@ const registerForEvent = async (req, res) => {
     await Registration.create({
       user: userId,
       event: event._id,
-      status: 'Confirmed'
+      status: 'Confirmed',
+      surfingSlot: surfingSlot ? Number(surfingSlot) : undefined,
+      surfingSlotTime: surfingSlotTime || ''
     });
 
+    if (surfingSlot && Array.isArray(event.surfingSlots)) {
+      const targetSlot = event.surfingSlots.find(s => s.slotNumber === Number(surfingSlot));
+      if (targetSlot) {
+        targetSlot.slotsFilled = (targetSlot.slotsFilled || 0) + 1;
+      }
+    }
+
+    const participantName = req.user.name && req.user.name.trim() !== ''
+      ? req.user.name
+      : (req.user.phone || req.user.email || 'Athlete');
+
     event.slotsFilled += 1;
-    event.participants.push({ name: req.user.name, role: 'Participant' });
+    const alreadyInParticipants = event.participants.some(
+      p => (p.userId && p.userId.toString() === userId.toString()) || (p.name === participantName)
+    );
+    if (!alreadyInParticipants) {
+      event.participants.push({
+        userId,
+        name: participantName,
+        role: 'Participant',
+        surfingSlot: surfingSlot ? Number(surfingSlot) : undefined,
+        surfingSlotTime: surfingSlotTime || ''
+      });
+    }
     await event.save();
 
     const user = await User.findById(userId);
@@ -274,7 +405,8 @@ const createEvent = async (req, res) => {
     schedule,
     organizedBy,
     contact,
-    venueUrl
+    venueUrl,
+    surfingSlots
   } = req.body;
 
   if (!title || !category || !date || !time || !location || slotsTotal === undefined) {
@@ -317,6 +449,7 @@ const createEvent = async (req, res) => {
       slotsFilled: 0,
       rules: rules || [],
       schedule: schedule || [],
+      surfingSlots: Array.isArray(surfingSlots) ? surfingSlots : [],
       organizedBy: organizedBy || req.user.name || 'Strydclub Admin',
       contact: contact || req.user.phone || ''
     });
@@ -402,8 +535,20 @@ const cancelRegistration = async (req, res) => {
       event.slotsFilled -= 1;
     }
 
+    // Decrease slotsFilled for the specific surfing slot if applicable
+    if (existingReg.surfingSlot && Array.isArray(event.surfingSlots)) {
+      const targetSlot = event.surfingSlots.find(s => s.slotNumber === Number(existingReg.surfingSlot));
+      if (targetSlot && targetSlot.slotsFilled > 0) {
+        targetSlot.slotsFilled -= 1;
+      }
+    }
+
     // Remove user from participants list
-    event.participants = event.participants.filter(p => p.name !== req.user.name);
+    event.participants = event.participants.filter(p => {
+      if (p.userId && p.userId.toString() === userId.toString()) return false;
+      if (p.name === req.user.name) return false;
+      return true;
+    });
     await event.save();
 
     // Decrease user's total events count
@@ -434,6 +579,7 @@ const cancelRegistration = async (req, res) => {
 const createCashfreeOrder = async (req, res) => {
   const { slug } = req.params;
   const userId = req.user._id;
+  const { surfingSlot, surfingSlotTime } = req.body || {};
 
   try {
     let event;
@@ -444,6 +590,10 @@ const createCashfreeOrder = async (req, res) => {
     }
     if (!event) {
       return res.status(404).json({ success: false, message: 'Event not found' });
+    }
+
+    if (event.status === 'Completed' || event.status === 'completed' || event.status === 'Event Completed' || isEventOver(event)) {
+      return res.status(400).json({ success: false, message: 'This event has already concluded' });
     }
 
     if (event.slotsFilled >= event.slotsTotal) {
@@ -461,8 +611,25 @@ const createCashfreeOrder = async (req, res) => {
     }
 
     const orderId = `order_${event._id}_${Date.now()}`;
-    const isProd = process.env.CASHFREE_ENV === 'PROD';
+    const isProd = isCashfreeProd();
     const baseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
+
+    const frontendUrl = req.headers.origin || process.env.FRONTEND_URL || 'https://strydclub.com';
+    // Cashfree order_tags values strictly allow only alphanumeric, underscores, and hyphens (no spaces, colons, or unicode dashes)
+    const safeSlotTime = surfingSlotTime
+      ? String(surfingSlotTime).replace(/\s+/g, '_').replace(/[:–—]/g, '-').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50)
+      : '';
+
+    const orderTags = {
+      eventId: event._id.toString(),
+      userId: userId.toString()
+    };
+    if (surfingSlot) {
+      orderTags.surfingSlot = String(surfingSlot);
+    }
+    if (safeSlotTime) {
+      orderTags.surfingSlotTime = safeSlotTime;
+    }
 
     const orderPayload = {
       order_id: orderId,
@@ -473,8 +640,14 @@ const createCashfreeOrder = async (req, res) => {
         customer_email: req.user.email || `${userId}@strydclub.com`,
         customer_phone: req.user.phone ? req.user.phone.replace(/[^0-9]/g, '').slice(-10) : '9999999999',
         customer_name: req.user.name || 'Athlete'
-      }
+      },
+      order_meta: {
+        return_url: `${frontendUrl}/events/${event.slug}?order_id={order_id}`
+      },
+      order_tags: orderTags
     };
+
+
 
     try {
       const response = await fetch(`${baseUrl}/orders`, {
@@ -498,22 +671,19 @@ const createCashfreeOrder = async (req, res) => {
           cf_environment: isProd ? 'production' : 'sandbox'
         });
       } else {
-        console.warn(`[Cashfree API Warning] ${cfData.message || 'Falling back to sandbox order session'}`);
-        // Fallback for development/testing when keys are simulated
-        return res.status(200).json({
-          success: true,
-          order_id: orderId,
-          payment_session_id: `session_${Date.now()}`,
-          cf_environment: 'sandbox'
+        console.error(`[Cashfree Order Creation Error] Status ${response.status}:`, cfData);
+        return res.status(response.status || 400).json({
+          success: false,
+          message: cfData.message || 'Failed to create Cashfree payment order',
+          code: cfData.code || 'cashfree_order_failed'
         });
       }
     } catch (cfErr) {
       console.error(`Cashfree API connection error: ${cfErr.message}`);
-      return res.status(200).json({
-        success: true,
-        order_id: orderId,
-        payment_session_id: `session_${Date.now()}`,
-        cf_environment: 'sandbox'
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to connect to Cashfree payment gateway. Please try again.',
+        error: cfErr.message
       });
     }
   } catch (error) {
@@ -524,8 +694,8 @@ const createCashfreeOrder = async (req, res) => {
 
 const verifyCashfreePayment = async (req, res) => {
   const { slug } = req.params;
-  const userId = req.user._id;
   const { order_id } = req.body;
+  let { surfingSlot, surfingSlotTime } = req.body;
 
   if (!order_id) {
     return res.status(400).json({ success: false, message: 'Missing order_id for payment verification' });
@@ -542,59 +712,160 @@ const verifyCashfreePayment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Event not found' });
     }
 
-    const existingReg = await Registration.findOne({ user: userId, event: event._id });
-    if (existingReg) {
-      return res.status(400).json({ success: false, message: 'You have already registered for this event' });
-    }
-
-    if (event.slotsFilled >= event.slotsTotal) {
-      return res.status(400).json({ success: false, message: 'Event is fully booked' });
-    }
-
     // Verify status with Cashfree API if production API keys are live
-    const isProd = process.env.CASHFREE_ENV === 'PROD';
+    const isProd = isCashfreeProd();
     const baseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
 
-    let isPaymentValid = true;
-    try {
-      if (!order_id.includes(`session_`)) {
-        const response = await fetch(`${baseUrl}/orders/${order_id}`, {
-          method: 'GET',
-          headers: {
-            'x-client-id': process.env.CASHFREE_APP_ID || 'TEST_APP_ID',
-            'x-client-secret': process.env.CASHFREE_SECRET_KEY || 'TEST_SECRET',
-            'x-api-version': '2023-08-01'
+    let isPaymentValid = false;
+    let cfData = null;
+
+    if (order_id.includes('session_')) {
+      isPaymentValid = true;
+    } else {
+      const cfHeaders = {
+        'x-client-id': process.env.CASHFREE_APP_ID || 'TEST_APP_ID',
+        'x-client-secret': process.env.CASHFREE_SECRET_KEY || 'TEST_SECRET',
+        'x-api-version': '2023-08-01'
+      };
+
+      // Resilient retry loop: allow up to 3 attempts with 1.5s delay for payment state transition
+      const maxRetries = 3;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const response = await fetch(`${baseUrl}/orders/${order_id}`, {
+            method: 'GET',
+            headers: cfHeaders
+          });
+          cfData = await response.json();
+
+          if (response.ok) {
+            if (cfData.order_status === 'PAID') {
+              isPaymentValid = true;
+              break;
+            } else {
+              // Check payments array fallback
+              const paymentsRes = await fetch(`${baseUrl}/orders/${order_id}/payments`, {
+                method: 'GET',
+                headers: cfHeaders
+              });
+              if (paymentsRes.ok) {
+                const paymentsData = await paymentsRes.json();
+                if (Array.isArray(paymentsData) && paymentsData.some(p => p.payment_status === 'SUCCESS')) {
+                  isPaymentValid = true;
+                  break;
+                }
+              }
+            }
           }
-        });
-        const cfData = await response.json();
-        if (response.ok && cfData.order_status !== 'PAID') {
-          isPaymentValid = false;
+        } catch (cfErr) {
+          console.warn(`Cashfree verification status check attempt ${attempt} warning: ${cfErr.message}`);
+          if (!isProd) {
+            isPaymentValid = true;
+            break;
+          }
+        }
+
+        if (!isPaymentValid && attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 1500));
         }
       }
-    } catch (cfErr) {
-      console.warn(`Cashfree verification status check bypassed for test order: ${cfErr.message}`);
     }
 
     if (!isPaymentValid) {
       return res.status(400).json({ success: false, message: 'Cashfree payment not completed or invalid.' });
     }
 
+    // Recover slot details from order_tags if available
+    if (!surfingSlot && orderTags?.surfingSlot) {
+      surfingSlot = orderTags.surfingSlot;
+      surfingSlotTime = orderTags.surfingSlotTime || surfingSlotTime;
+    }
+
+    if (surfingSlot && Array.isArray(event.surfingSlots)) {
+      const targetSlot = event.surfingSlots.find(s => s.slotNumber === Number(surfingSlot));
+      if (targetSlot) {
+        if (!surfingSlotTime || surfingSlotTime.includes('_')) {
+          surfingSlotTime = targetSlot.time ? (targetSlot.endTime ? `${targetSlot.time} – ${targetSlot.endTime}` : targetSlot.time) : surfingSlotTime;
+        }
+      }
+    }
+
+    // Resolve user: from authenticated req.user OR order_tags OR Cashfree verified customer_details
+    let user = req.user || null;
+    if (!user && orderTags?.userId && mongoose.Types.ObjectId.isValid(orderTags.userId)) {
+      user = await User.findById(orderTags.userId);
+    }
+    if (!user && cfData) {
+      const custDetails = cfData.customer_details || cfData.data?.customer_details;
+      if (custDetails) {
+        const custId = custDetails.customer_id;
+        if (custId && mongoose.Types.ObjectId.isValid(custId)) {
+          user = await User.findById(custId);
+        }
+        if (!user && custDetails.customer_phone) {
+          const phoneDigits = custDetails.customer_phone.replace(/\D/g, '').slice(-10);
+          user = await User.findOne({ phone: new RegExp(phoneDigits + '$') });
+        }
+        if (!user && custDetails.customer_email) {
+          user = await User.findOne({ email: custDetails.customer_email.toLowerCase().trim() });
+        }
+      }
+    }
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Could not associate payment with an athlete user account.' });
+    }
+
+    const existingReg = await Registration.findOne({ user: user._id, event: event._id });
+    if (existingReg) {
+      return res.status(200).json({
+        success: true,
+        message: 'You are already registered for this event',
+        alreadyRegistered: true,
+        registration: existingReg
+      });
+    }
+
     // Payment valid, create event registration!
-    await Registration.create({
-      user: userId,
+    const newRegistration = await Registration.create({
+      user: user._id,
       event: event._id,
       status: 'Confirmed',
       paymentId: `cf_pay_${Date.now()}`,
-      orderId: order_id
+      orderId: order_id,
+      surfingSlot: surfingSlot ? Number(surfingSlot) : undefined,
+      surfingSlotTime: surfingSlotTime || ''
     });
 
+    if (surfingSlot && Array.isArray(event.surfingSlots)) {
+      const targetSlot = event.surfingSlots.find(s => s.slotNumber === Number(surfingSlot));
+      if (targetSlot) {
+        targetSlot.slotsFilled = (targetSlot.slotsFilled || 0) + 1;
+      }
+    }
+
+    const participantName = user.name && user.name.trim() !== ''
+      ? user.name
+      : (user.phone || user.email || 'Athlete');
+
     event.slotsFilled += 1;
-    event.participants.push({ name: req.user.name, role: 'Participant' });
+    const alreadyInParticipants = event.participants.some(
+      p => (p.userId && p.userId.toString() === user._id.toString()) || (p.name === participantName)
+    );
+    if (!alreadyInParticipants) {
+      event.participants.push({
+        userId: user._id,
+        name: participantName,
+        role: 'Participant',
+        surfingSlot: surfingSlot ? Number(surfingSlot) : undefined,
+        surfingSlotTime: surfingSlotTime || ''
+      });
+    }
     await event.save();
 
-    const user = await User.findById(userId);
     user.totalEvents += 1;
     user.sportsPlayed = Math.max(user.sportsPlayed, 1);
+    if (!user.favoriteSports) user.favoriteSports = [];
     if (!user.favoriteSports.includes(event.category)) {
       user.favoriteSports.push(event.category);
     }
@@ -603,7 +874,11 @@ const verifyCashfreePayment = async (req, res) => {
     // Trigger WhatsApp & Email confirmation notification to registered user
     sendRegistrationNotification(user, event).catch(err => console.error(`[Notification Warning] ${err.message}`));
 
-    return res.status(200).json({ success: true, message: 'Cashfree payment verified and registration successful' });
+    return res.status(200).json({
+      success: true,
+      message: 'Cashfree payment verified and registration successful',
+      registration: newRegistration
+    });
   } catch (error) {
     console.error(`Verify Cashfree payment error: ${error.message}`);
     return res.status(500).json({ success: false, message: 'Server error during payment verification' });
@@ -694,6 +969,131 @@ const getPublicStats = async (req, res) => {
   }
 };
 
+const handleCashfreeWebhook = async (req, res) => {
+  try {
+    const payload = req.body;
+    console.log(`[Cashfree Webhook Received] Raw payload type: ${payload?.type || payload?.event || 'unknown'}`);
+
+    const orderData = payload?.data?.order || payload?.order || payload;
+    const customerData = payload?.data?.customer_details || payload?.customer_details || payload;
+    const paymentData = payload?.data?.payment || payload?.payment || payload;
+
+    const orderId = orderData?.order_id || payload?.orderId || payload?.order_id;
+    const paymentStatus = (paymentData?.payment_status || orderData?.order_status || payload?.txStatus || '').toUpperCase();
+    const type = (payload?.type || payload?.event || '').toUpperCase();
+
+    const isSuccess = type.includes('SUCCESS') ||
+                      type.includes('PAID') ||
+                      paymentStatus === 'SUCCESS' ||
+                      paymentStatus === 'PAID';
+
+    if (orderId && isSuccess) {
+      const orderTags = orderData?.order_tags || payload?.order_tags || payload?.data?.order?.order_tags;
+      let userId = customerData?.customer_id || orderTags?.userId;
+      let eventId = orderTags?.eventId || null;
+
+      if (!eventId && orderId.startsWith('order_')) {
+        const parts = orderId.split('_');
+        if (parts.length >= 2 && mongoose.Types.ObjectId.isValid(parts[1])) {
+          eventId = parts[1];
+        }
+      }
+
+      let event = null;
+      if (eventId) {
+        event = await Event.findById(eventId);
+      }
+      if (!event && req.params.slug) {
+        event = await Event.findOne({ slug: req.params.slug });
+      }
+
+      if (event) {
+        let user = null;
+        if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+          user = await User.findById(userId);
+        }
+        if (!user && (customerData?.customer_phone || payload?.customerPhone)) {
+          const rawPhone = customerData?.customer_phone || payload?.customerPhone;
+          const phoneDigits = rawPhone.replace(/\D/g, '').slice(-10);
+          user = await User.findOne({ phone: new RegExp(phoneDigits + '$') });
+        }
+        if (!user && (customerData?.customer_email || payload?.customerEmail)) {
+          const email = (customerData?.customer_email || payload?.customerEmail).toLowerCase().trim();
+          user = await User.findOne({ email });
+        }
+
+        if (user) {
+          const existingReg = await Registration.findOne({ user: user._id, event: event._id });
+          if (!existingReg) {
+            const surfingSlot = orderTags?.surfingSlot ? Number(orderTags.surfingSlot) : undefined;
+            let surfingSlotTime = orderTags?.surfingSlotTime || '';
+            if (surfingSlot && Array.isArray(event.surfingSlots)) {
+              const targetSlot = event.surfingSlots.find(s => s.slotNumber === surfingSlot);
+              if (targetSlot) {
+                if (!surfingSlotTime || surfingSlotTime.includes('_')) {
+                  surfingSlotTime = targetSlot.time ? (targetSlot.endTime ? `${targetSlot.time} – ${targetSlot.endTime}` : targetSlot.time) : surfingSlotTime;
+                }
+              }
+            }
+
+            await Registration.create({
+              user: user._id,
+              event: event._id,
+              status: 'Confirmed',
+              paymentId: paymentData?.cf_payment_id ? `cf_pay_${paymentData.cf_payment_id}` : `cf_pay_${Date.now()}`,
+              orderId: orderId,
+              surfingSlot,
+              surfingSlotTime
+            });
+
+            if (surfingSlot && Array.isArray(event.surfingSlots)) {
+              const targetSlot = event.surfingSlots.find(s => s.slotNumber === surfingSlot);
+              if (targetSlot) {
+                targetSlot.slotsFilled = (targetSlot.slotsFilled || 0) + 1;
+              }
+            }
+
+            const participantName = user.name && user.name.trim() !== '' ? user.name : (user.phone || user.email || 'Athlete');
+            const alreadyInParticipants = event.participants.some(
+              p => (p.userId && p.userId.toString() === user._id.toString()) || (p.name === participantName)
+            );
+            if (!alreadyInParticipants) {
+              event.participants.push({
+                userId: user._id,
+                name: participantName,
+                role: 'Participant',
+                surfingSlot: surfingSlot ? Number(surfingSlot) : undefined,
+                surfingSlotTime: surfingSlotTime || ''
+              });
+            }
+            event.slotsFilled += 1;
+            await event.save();
+
+            user.totalEvents += 1;
+            user.sportsPlayed = Math.max(user.sportsPlayed, 1);
+            if (!user.favoriteSports) user.favoriteSports = [];
+            if (!user.favoriteSports.includes(event.category)) {
+              user.favoriteSports.push(event.category);
+            }
+            await user.save();
+
+            console.log(`[Cashfree Webhook Success] Auto-registered user ${participantName} (${user._id}) for '${event.title}' via Webhook`);
+            sendRegistrationNotification(user, event).catch(err => console.error(`[Notification Warning] ${err.message}`));
+          } else {
+            console.log(`[Cashfree Webhook Info] User ${user._id} is already registered for event '${event.title}'`);
+          }
+        } else {
+          console.warn(`[Cashfree Webhook Warning] Could not find user account for order ${orderId}`);
+        }
+      }
+    }
+    return res.status(200).json({ success: true, message: 'Webhook processed' });
+  } catch (error) {
+    console.error(`[Cashfree Webhook Error] ${error.message}`);
+    return res.status(200).json({ success: true, message: 'Webhook error handled' });
+  }
+};
+
 module.exports = {
   getEvents,
   getEventBySlug,
@@ -702,6 +1102,7 @@ module.exports = {
   cancelRegistration,
   createCashfreeOrder,
   verifyCashfreePayment,
+  handleCashfreeWebhook,
   getPublicStats
 };
 

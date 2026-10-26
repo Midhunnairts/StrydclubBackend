@@ -27,7 +27,11 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
-  }
+  },
+  family: 4,
+  connectionTimeout: 5000,
+  greetingTimeout: 5000,
+  socketTimeout: 5000
 });
 
 /**
@@ -77,7 +81,7 @@ const sendOtp = async (req, res) => {
     await Otp.findOneAndUpdate(
       { emailOrPhone: normalizedValue },
       { code, expiresAt },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     console.log(`[OTP] Generated 6-digit OTP code ${code} for ${normalizedValue} via ${channel}`);

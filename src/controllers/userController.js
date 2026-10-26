@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Registration = require('../models/Registration');
 const Event = require('../models/Event');
+const { isEventOver } = require('../utils/eventUtils');
 
 const getUserDashboard = async (req, res) => {
   const userId = req.user._id;
@@ -17,12 +18,10 @@ const getUserDashboard = async (req, res) => {
     const past = [];
 
     const now = new Date();
-    now.setHours(0, 0, 0, 0);
 
     registrations.forEach(reg => {
       if (reg.event) {
-        const eventDate = new Date(reg.event.date);
-        const isPastEvent = (!isNaN(eventDate.getTime()) && eventDate < now) ||
+        const isPastEvent = isEventOver(reg.event, now) ||
                             reg.event.status === 'Completed' ||
                             reg.event.status === 'completed' ||
                             reg.event.status === 'Event Completed' ||
@@ -45,9 +44,11 @@ const getUserDashboard = async (req, res) => {
             title: reg.event.title,
             category: reg.event.category,
             date: reg.event.date,
-            time: reg.event.time,
+            time: reg.surfingSlotTime || reg.event.time,
             location: reg.event.location,
-            status: reg.status || 'Confirmed'
+            status: reg.status || 'Confirmed',
+            surfingSlot: reg.surfingSlot,
+            surfingSlotTime: reg.surfingSlotTime || ''
           });
         }
       }

@@ -7,7 +7,9 @@ const registrationSchema = new mongoose.Schema({
   result: { type: String, default: '' },
   won: { type: Boolean, default: false },
   paymentId: { type: String, default: '' },
-  orderId: { type: String, default: '' }
+  orderId: { type: String, default: '' },
+  surfingSlot: { type: Number },
+  surfingSlotTime: { type: String, default: '' }
 }, {
   timestamps: true
 });
