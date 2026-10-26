@@ -6,10 +6,23 @@ const connectDB = require('./src/config/db');
 // Load environment variables
 dotenv.config();
 
-// Connect to MongoDB Database
-connectDB();
+// Connect to MongoDB Database (initial background connect for non-serverless runtimes)
+if (process.env.VERCEL !== '1') {
+  connectDB().catch((err) => console.error('Initial DB connection error:', err));
+}
 
 const app = express();
+
+// Middleware to ensure database connection before handling requests in serverless environments (Vercel)
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error('Database connection error in request:', err);
+    res.status(500).json({ success: false, message: 'Database connection failed' });
+  }
+});
 
 // Enable Cross-Origin Resource Sharing (CORS) for Angular Frontend
 app.use(cors());
@@ -42,6 +55,12 @@ app.get('/', (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Only listen directly when running locally or on standalone server
+if (process.env.VERCEL !== '1' && require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+// Export Express app for serverless platforms like Vercel
+module.exports = app;
