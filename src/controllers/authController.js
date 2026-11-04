@@ -434,93 +434,36 @@ const getMsg91Status = async (req, res) => {
     outboundIp = e.message;
   }
 
-  const tests = {};
+  let sendOtpTest = null;
   if (authKey) {
     const widgetId = process.env.MSG91_WIDGET_ID || '366b63714641323136353833';
-    const tokenAuth = process.env.MSG91_TOKEN_AUTH || '586808TRmIwbVp6aea1d2eP1';
-
-    // Test 0: ONLY tokenAuth in body, NO authkey header
     try {
-      const r0 = await fetch('https://api.msg91.com/api/v5/widget/sendOtp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ widgetId, identifier: '917902755306', tokenAuth })
-      });
-      tests.onlyTokenAuthNoAuthkey = { status: r0.status, body: await r0.json().catch(() => ({})) };
-    } catch (e) {
-      tests.onlyTokenAuthNoAuthkey = { error: e.message };
-    }
-
-    // Test 1: With tokenAuth in body
-    try {
-      const r1 = await fetch('https://api.msg91.com/api/v5/widget/sendOtp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', authkey: authKey.trim() },
-        body: JSON.stringify({ widgetId, identifier: '917902755306', tokenAuth })
-      });
-      tests.withTokenAuth = {
-        status: r1.status,
-        headers: Object.fromEntries(r1.headers.entries()),
-        body: await r1.json().catch(() => ({}))
-      };
-    } catch (e) {
-      tests.withTokenAuth = { error: e.message };
-    }
-
-    // Test 2: WITHOUT tokenAuth
-    try {
-      const r2 = await fetch('https://api.msg91.com/api/v5/widget/sendOtp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', authkey: authKey.trim() },
-        body: JSON.stringify({ widgetId, identifier: '917902755306' })
-      });
-      tests.withoutTokenAuth = { status: r2.status, body: await r2.json().catch(() => ({})) };
-    } catch (e) {
-      tests.withoutTokenAuth = { error: e.message };
-    }
-
-    // Test 3: Browser headers + User-Agent
-    try {
-      const r3 = await fetch('https://api.msg91.com/api/v5/widget/sendOtp', {
+      const r = await fetch('https://api.msg91.com/api/v5/widget/sendOtp', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-          authkey: authKey.trim()
+          authkey: authKey.trim(),
+          'content-type': 'application/json'
         },
-        body: JSON.stringify({ widgetId, identifier: '917902755306' })
+        body: JSON.stringify({
+          widgetId,
+          identifier: '917902755306'
+        })
       });
-      tests.browserHeadersWithoutToken = { status: r3.status, body: await r3.json().catch(() => ({})) };
+      sendOtpTest = { status: r.status, body: await r.json().catch(() => ({})) };
     } catch (e) {
-      tests.browserHeadersWithoutToken = { error: e.message };
-    }
-
-    // Test 4: Legacy SendOTP endpoint
-    try {
-      const tId = process.env.MSG91_OTP_TEMPLATE_ID || '6ae98945426184e73b0f75f4';
-      const r4 = await fetch(`https://control.msg91.com/api/v5/otp?template_id=${tId}&mobile=917902755306&otp_expiry=5`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', authkey: authKey.trim() },
-        body: JSON.stringify({})
-      });
-      tests.legacySendOtp = { status: r4.status, body: await r4.json().catch(() => ({})) };
-    } catch (e) {
-      tests.legacySendOtp = { error: e.message };
+      sendOtpTest = { error: e.message };
     }
   }
 
   return res.json({
-    version: 'diag-v2',
+    status: 'ok',
     outboundIp,
     env: {
       MSG91_AUTH_KEY_EXISTS: Boolean(authKey),
       MSG91_AUTH_KEY_PREFIX: authKey ? authKey.substring(0, 6) + '...' + authKey.slice(-4) : null,
-      MSG91_WIDGET_ID: process.env.MSG91_WIDGET_ID || null,
-      MSG91_TOKEN_AUTH_EXISTS: Boolean(process.env.MSG91_TOKEN_AUTH),
-      MSG91_OTP_TEMPLATE_ID: process.env.MSG91_OTP_TEMPLATE_ID || null
+      MSG91_WIDGET_ID: process.env.MSG91_WIDGET_ID || '366b63714641323136353833'
     },
-    tests
+    sendOtpTest
   });
 };
 
