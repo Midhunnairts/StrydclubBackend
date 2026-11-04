@@ -282,71 +282,47 @@ const verifyWidgetAccessToken = async (accessToken) => {
 const sendWidgetOtp = async ({ phone }) => {
   const authKey = process.env.MSG91_AUTH_KEY;
   const widgetId = process.env.MSG91_WIDGET_ID || '366b63714641323136353833';
-  const tokenAuth = process.env.MSG91_TOKEN_AUTH || '586808TRmIwbVp6aea1d2eP1';
   const mobile = formatMobileForMsg91(phone);
 
   if (!authKey) {
     return { success: false, message: 'MSG91_AUTH_KEY is not set' };
   }
 
-  const attempts = [
-    // Attempt 1: Using tokenAuth directly in body (MSG91 dedicated widget token, no authkey header)
-    {
+  try {
+    const url = 'https://api.msg91.com/api/v5/widget/sendOtp';
+    const response = await fetch(url, {
+      method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        authkey: authKey.trim(),
+        'content-type': 'application/json'
       },
-      body: { widgetId, identifier: mobile, tokenAuth }
-    },
-    // Attempt 2: With authkey header and tokenAuth
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        authkey: authKey.trim()
-      },
-      body: { widgetId, identifier: mobile, tokenAuth }
-    },
-    // Attempt 3: With authkey header alone (without tokenAuth)
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        authkey: authKey.trim()
-      },
-      body: { widgetId, identifier: mobile }
-    }
-  ];
+      body: JSON.stringify({
+        widgetId,
+        identifier: mobile
+      })
+    });
 
-  let lastError = null;
-  for (const att of attempts) {
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: att.headers,
-        body: JSON.stringify(att.body)
-      });
-      const data = await response.json().catch(() => ({}));
+    const data = await response.json().catch(() => ({}));
 
-      if (response.ok && data.type === 'success') {
-        console.log(`[MSG91 Widget OTP Success] Sent to ${mobile}, reqId: ${data.message}`);
-        return {
-          success: true,
-          reqId: data.message,
-          message: 'OTP sent successfully via MSG91 WhatsApp/Widget'
-        };
-      } else {
-        lastError = data.message || `HTTP ${response.status}`;
-      }
-    } catch (e) {
-      lastError = e.message;
+    if (response.ok && data.type === 'success') {
+      console.log(`[MSG91 Widget OTP Success] Sent to ${mobile}, reqId: ${data.message}`);
+      return {
+        success: true,
+        reqId: data.message,
+        message: 'OTP sent successfully via WhatsApp'
+      };
+    } else {
+      console.error('[MSG91 Widget OTP Error]:', data);
+      return {
+        success: false,
+        message: data.message || `Failed to send OTP (HTTP ${response.status})`,
+        data
+      };
     }
+  } catch (error) {
+    console.error('[MSG91 Widget Send Network Error]:', error.message);
+    return { success: false, message: error.message };
   }
-
-  return {
-    success: false,
-    message: lastError || 'Failed to send OTP via widget'
-  };
 };
 
 /**
