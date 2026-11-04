@@ -123,7 +123,7 @@ const sendOtp = async (req, res) => {
       const formattedPhone = normalizedValue;
 
       if (msg91Service.isConfigured()) {
-        const useWidget = Boolean(process.env.MSG91_WIDGET_ID);
+        const useWidget = Boolean(process.env.MSG91_WIDGET_ID || '366b63714641323136353833');
         let msg91Result;
 
         if (useWidget) {
