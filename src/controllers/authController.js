@@ -458,7 +458,11 @@ const getMsg91Status = async (req, res) => {
         headers: { 'Content-Type': 'application/json', authkey: authKey.trim() },
         body: JSON.stringify({ widgetId, identifier: '917902755306', tokenAuth })
       });
-      tests.withTokenAuth = { status: r1.status, body: await r1.json().catch(() => ({})) };
+      tests.withTokenAuth = {
+        status: r1.status,
+        headers: Object.fromEntries(r1.headers.entries()),
+        body: await r1.json().catch(() => ({}))
+      };
     } catch (e) {
       tests.withTokenAuth = { error: e.message };
     }
