@@ -911,17 +911,18 @@ const getPublicStats = async (req, res) => {
       }
     });
 
-    const knownCities = Array.from(new Set([...Object.keys(cityEventCounts), ...Object.keys(cityUserCounts)]));
-    const totalCities = knownCities.length || (totalEvents > 0 ? Math.min(totalEvents, 24) : 0);
+    // City count and list based strictly on event hosted cities
+    const eventCities = Object.keys(cityEventCounts);
+    const totalCities = eventCities.length;
 
     const athletesFormatted = totalAthletes > 0 ? `${totalAthletes.toLocaleString()}+` : '0';
     const eventsFormatted = totalEvents > 0 ? `${totalEvents.toLocaleString()}+` : '0';
     const citiesFormatted = totalCities > 0 ? `${totalCities}` : '0';
     const championsFormatted = totalAthletes > 0 ? `${(totalAthletes * 2).toLocaleString()}+` : '0';
 
-    const cityList = knownCities.map(cityName => ({
+    const cityList = eventCities.map(cityName => ({
       name: cityName,
-      membersCount: cityUserCounts[cityName] || Math.max(Math.ceil(totalAthletes / (knownCities.length || 1)), 1),
+      membersCount: cityUserCounts[cityName] || Math.max(Math.ceil(totalAthletes / (eventCities.length || 1)), 1),
       eventsCount: cityEventCounts[cityName] || 0
     }));
 
@@ -937,9 +938,7 @@ const getPublicStats = async (req, res) => {
         athletesText: athletesFormatted,
         citiesText: citiesFormatted,
         championsText: championsFormatted,
-        cityList: cityList.length > 0 ? cityList : [
-          { name: 'Chennai', membersCount: 0, eventsCount: 0 }
-        ]
+        cityList: cityList.length > 0 ? cityList : []
       }
     });
   } catch (error) {
