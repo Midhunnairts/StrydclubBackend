@@ -1,18 +1,8 @@
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
-const twilio = require('twilio');
+const msg91Service = require('../services/msg91Service');
 const User = require('../models/User');
 const Otp = require('../models/Otp');
-
-// Initialize Twilio client using Account SID and Auth Token if they are set in env
-const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
-const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
-const twilioWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER || process.env.twilioWhatsAppNumber;
-
-let twilioClient = null;
-if (twilioAccountSid && twilioAuthToken) {
-  twilioClient = twilio(twilioAccountSid, twilioAuthToken);
-}
 
 
 const generateToken = (id) => {
@@ -131,56 +121,50 @@ const sendOtp = async (req, res) => {
       }
     } else {
       const formattedPhone = normalizedValue;
-      const twilioSmsFrom = process.env.TWILIO_PHONE_NUMBER || (process.env.TWILIO_WHATSAPP_NUMBER || '').replace('whatsapp:', '');
-      const waEnvVal = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+18142613196';
-      const twilioWaFrom = waEnvVal.startsWith('whatsapp:') ? waEnvVal : `whatsapp:${waEnvVal}`;
-      const formattedWaTo = `whatsapp:${formattedPhone}`;
 
-      const otpBody = `Your STRYDCLUB verification code is: ${code}. It is valid for 5 minutes.`;
+      if (msg91Service.isConfigured()) {
+        const useWidget = Boolean(process.env.MSG91_WIDGET_ID);
+        let msg91Result;
 
-      let sentSms = false;
-      let sentWa = false;
+        if (useWidget) {
+          // Route via MSG91 OTP Widget (delivers via WhatsApp without Indian TRAI DLT issues)
+          msg91Result = await msg91Service.sendWidgetOtp({
+            phone: formattedPhone
+          });
 
-      if (twilioClient) {
-        // 1. Send SMS via Twilio
-        if (twilioSmsFrom) {
-          try {
-            await twilioClient.messages.create({
-              body: otpBody,
-              from: twilioSmsFrom,
-              to: formattedPhone
-            });
-            console.log(`[OTP] Sent real Twilio SMS OTP to ${formattedPhone} successfully.`);
-            sentSms = true;
-          } catch (smsErr) {
-            console.error(`[Twilio SMS Error] Failed to send SMS: ${smsErr.message}`);
+          if (msg91Result.success && msg91Result.reqId) {
+            // Save widget reqId in Mongo
+            await Otp.findOneAndUpdate(
+              { emailOrPhone: normalizedValue },
+              { reqId: msg91Result.reqId, code, expiresAt },
+              { upsert: true }
+            );
           }
+        } else {
+          msg91Result = await msg91Service.sendOtp({
+            phone: formattedPhone,
+            otp: code
+          });
         }
 
-        // 2. Send WhatsApp via Twilio
-        if (twilioWaFrom) {
-          try {
-            await twilioClient.messages.create({
-              body: `💬 *STRYDCLUB Security Code*\n\nYour verification code is: *${code}*\n\nThis code is valid for 5 minutes. Do not share it with anyone.`,
-              from: twilioWaFrom,
-              to: formattedWaTo
-            });
-            console.log(`[OTP] Sent real Twilio WhatsApp OTP to ${formattedWaTo} successfully.`);
-            sentWa = true;
-          } catch (waErr) {
-            console.error(`[Twilio WhatsApp Error] Failed to send WhatsApp: ${waErr.message}`);
-          }
-        }
-
-        if (sentSms || sentWa) {
+        if (msg91Result.success) {
+          console.log(`[OTP] Sent real MSG91 OTP to ${formattedPhone} successfully via ${useWidget ? 'WhatsApp/Widget' : 'SMS'}.`);
           return res.status(200).json({
             success: true,
-            message: `OTP sent successfully via ${sentSms && sentWa ? 'SMS and WhatsApp' : (sentSms ? 'SMS' : 'WhatsApp')}`
+            message: `OTP sent successfully via ${useWidget ? 'WhatsApp' : 'MSG91'}`
+          });
+        } else {
+          console.error(`[MSG91 OTP Error] Failed to send OTP: ${msg91Result.message}`);
+          return res.status(200).json({
+            success: true,
+            message: `OTP delivery attempted (${msg91Result.message})`,
+            mockMode: true,
+            code
           });
         }
       }
 
-      console.warn(`[OTP WARNING] Twilio credentials or TWILIO_WHATSAPP_NUMBER not set. Falling back to mock phone output.`);
+      console.warn(`[OTP WARNING] MSG91 credentials not set (MSG91_AUTH_KEY). Falling back to mock phone output.`);
       return res.status(200).json({
         success: true,
         message: 'OTP sent successfully (Simulated - check server console for code)',
@@ -200,7 +184,7 @@ const verifyOtp = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Please provide credentials and OTP code' });
   }
 
-  if (code.length !== 6) {
+  if (code.length < 4 || code.length > 6) {
     return res.status(400).json({ success: false, message: 'Invalid OTP code format' });
   }
 
@@ -226,7 +210,19 @@ const verifyOtp = async (req, res) => {
         return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new one.' });
       }
 
-      if (otpRecord.code !== code) {
+      // If OTP was sent via MSG91 Widget, verify with MSG91's widget verify API
+      if (otpRecord.reqId) {
+        const widgetVerify = await msg91Service.verifyWidgetOtp({
+          reqId: otpRecord.reqId,
+          otp: code
+        });
+        if (!widgetVerify.success) {
+          // If widget verify failed, check if local code matches as fallback
+          if (otpRecord.code && otpRecord.code !== code) {
+            return res.status(400).json({ success: false, message: widgetVerify.message || 'Invalid OTP code. Please try again.' });
+          }
+        }
+      } else if (otpRecord.code && otpRecord.code !== code) {
         return res.status(400).json({ success: false, message: 'Invalid OTP code. Please try again.' });
       }
 
@@ -322,5 +318,110 @@ const verifyOtp = async (req, res) => {
   }
 };
 
-module.exports = { sendOtp, verifyOtp };
+/**
+ * Verify MSG91 OTP Widget Access Token and log in / register user
+ */
+const verifyWidgetToken = async (req, res) => {
+  const { accessToken } = req.body;
+  if (!accessToken) {
+    return res.status(400).json({ success: false, message: 'Access token from MSG91 widget is required' });
+  }
+
+  try {
+    const result = await msg91Service.verifyWidgetAccessToken(accessToken);
+    if (!result.success || (!result.mobile && !result.email)) {
+      return res.status(400).json({
+        success: false,
+        message: result.message || 'Failed to verify MSG91 OTP widget token'
+      });
+    }
+
+    let user;
+    let isNewUser = false;
+
+    if (result.mobile) {
+      const normalizedPhone = normalizePhone(result.mobile);
+      const base10Phone = getBase10Phone(result.mobile);
+
+      user = await User.findOne({
+        $or: [
+          { phone: normalizedPhone },
+          { phone: result.mobile },
+          { phone: `+91 ${base10Phone}` },
+          ...(base10Phone ? [{ phone: new RegExp(base10Phone + '$') }] : [])
+        ]
+      });
+
+      if (!user) {
+        isNewUser = true;
+        user = await User.create({
+          name: '',
+          phone: normalizedPhone,
+          location: '',
+          loginChannel: 'phone',
+          isProfileComplete: false,
+          role: 'user',
+          favoriteSports: [],
+          memberSince: 'January 2026',
+          totalEvents: 0,
+          eventsWon: 0,
+          sportsPlayed: 0
+        });
+      } else if (user.phone !== normalizedPhone) {
+        user.phone = normalizedPhone;
+        await user.save();
+      }
+    } else if (result.email) {
+      const normalizedEmail = result.email.toLowerCase().trim();
+      const isAdminEmail = normalizedEmail.includes('.stryd') || normalizedEmail.includes('@stryd') || normalizedEmail.includes('strydclub');
+      const role = isAdminEmail ? 'admin' : 'user';
+
+      user = await User.findOne({ email: normalizedEmail });
+      if (!user) {
+        isNewUser = true;
+        user = await User.create({
+          name: '',
+          email: normalizedEmail,
+          location: '',
+          loginChannel: 'email',
+          isProfileComplete: false,
+          role,
+          favoriteSports: [],
+          memberSince: 'January 2026',
+          totalEvents: 0,
+          eventsWon: 0,
+          sportsPlayed: 0
+        });
+      }
+    }
+
+    const token = generateToken(user._id);
+
+    return res.status(200).json({
+      success: true,
+      token,
+      isNewUser,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        location: user.location || '',
+        isProfileComplete: Boolean(user.isProfileComplete && user.name && (user.loginChannel === 'phone' ? user.email : user.phone)),
+        loginChannel: user.loginChannel || 'phone',
+        role: user.role || 'user',
+        favoriteSports: user.favoriteSports,
+        memberSince: user.memberSince,
+        totalEvents: user.totalEvents,
+        eventsWon: user.eventsWon,
+        sportsPlayed: user.sportsPlayed
+      }
+    });
+  } catch (error) {
+    console.error(`MSG91 Widget Token verification error: ${error.message}`);
+    return res.status(500).json({ success: false, message: 'Server error during widget auth verification' });
+  }
+};
+
+module.exports = { sendOtp, verifyOtp, verifyWidgetToken };
 

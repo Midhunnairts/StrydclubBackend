@@ -1,20 +1,11 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
-const twilio = require('twilio');
 const nodemailer = require('nodemailer');
+const msg91Service = require('../services/msg91Service');
 const Event = require('../models/Event');
 const Registration = require('../models/Registration');
 const User = require('../models/User');
 const { isEventOver } = require('../utils/eventUtils');
-
-const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
-const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
-const twilioWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+16093079161';
-
-let twilioClient = null;
-if (twilioAccountSid && twilioAuthToken) {
-  twilioClient = twilio(twilioAccountSid, twilioAuthToken);
-}
 
 /**
  * Send WhatsApp, SMS, and Email registration confirmation notifications
@@ -29,50 +20,38 @@ const sendRegistrationNotification = async (user, event) => {
   const eventLocation = event.location || 'Strydclub Venue';
   const priceText = event.price > 0 ? `₹${event.price}` : 'Free';
 
-  // 1. Send WhatsApp & SMS via Twilio
+  // 1. Send SMS / WhatsApp via MSG91 Flow
   const rawPhone = user.phone;
   if (rawPhone) {
-    const digits = rawPhone.replace(/\D/g, '');
-    let formattedPhone = digits;
-    if (digits.length === 10) {
-      formattedPhone = `+91${digits}`;
-    } else if (!formattedPhone.startsWith('+')) {
-      formattedPhone = `+${digits}`;
-    }
+    const flowId = process.env.MSG91_REGISTRATION_FLOW_ID || process.env.MSG91_FLOW_ID;
 
-    const whatsappMessage = `🎉 *REGISTRATION CONFIRMED!* 🎉\n\nHi *${athleteName}*,\n\nYou have successfully registered for *${eventTitle}* on *STRYDCLUB*! 🏆\n\n📅 *Date:* ${eventDate}\n⏰ *Time:* ${eventTime}\n📍 *Venue:* ${eventLocation}\n💰 *Fee:* ${priceText}\n\nGet ready to elevate your performance! See you at the venue. 🏃‍♂️✨\n\n- *Team STRYDCLUB*`;
-    const smsMessage = `STRYDCLUB: Hi ${athleteName}, your registration for '${eventTitle}' on ${eventDate} at ${eventLocation} is CONFIRMED! See you there!`;
-
-    if (twilioClient) {
-      const waFrom = twilioWhatsAppNumber.startsWith('whatsapp:') ? twilioWhatsAppNumber : `whatsapp:${twilioWhatsAppNumber}`;
-      const waTo = `whatsapp:${formattedPhone}`;
-      const smsFrom = process.env.TWILIO_PHONE_NUMBER || twilioWhatsAppNumber.replace('whatsapp:', '');
-
-      // Send WhatsApp message
+    if (msg91Service.isConfigured() && flowId) {
       try {
-        await twilioClient.messages.create({
-          body: whatsappMessage,
-          from: waFrom,
-          to: waTo
+        const flowResult = await msg91Service.sendFlow({
+          templateId: flowId,
+          recipients: [
+            {
+              mobiles: rawPhone,
+              name: athleteName,
+              event: eventTitle,
+              date: eventDate,
+              time: eventTime,
+              venue: eventLocation,
+              fee: priceText
+            }
+          ]
         });
-        console.log(`[WhatsApp Notification] Sent WhatsApp registration confirmation to ${waTo} for event '${eventTitle}'`);
-      } catch (waErr) {
-        console.error(`[WhatsApp Error] Failed to send WhatsApp: ${waErr.message}`);
-      }
 
-      // Send SMS message
-      try {
-        await twilioClient.messages.create({
-          body: smsMessage,
-          from: smsFrom,
-          to: formattedPhone
-        });
-        console.log(`[SMS Notification] Sent SMS registration confirmation to ${formattedPhone} for event '${eventTitle}'`);
-      } catch (smsErr) {
-        console.error(`[SMS Error] Failed to send SMS: ${smsErr.message}`);
+        if (flowResult.success) {
+          console.log(`[MSG91 Notification] Sent registration confirmation to ${rawPhone} for event '${eventTitle}'`);
+        } else {
+          console.error(`[MSG91 Notification Error]: ${flowResult.message}`);
+        }
+      } catch (flowErr) {
+        console.error(`[MSG91 Notification Error]: ${flowErr.message}`);
       }
     } else {
-      console.log(`[Notification (Simulated)] Target: ${formattedPhone}\n[WhatsApp]: ${whatsappMessage}\n[SMS]: ${smsMessage}`);
+      console.log(`[Notification (Simulated)] Target: ${rawPhone}\nAthlete: ${athleteName}\nEvent: ${eventTitle} (${eventDate} at ${eventLocation})\nFee: ${priceText}`);
     }
   }
 
