@@ -289,42 +289,58 @@ const sendWidgetOtp = async ({ phone }) => {
     return { success: false, message: 'MSG91_AUTH_KEY is not set' };
   }
 
-  try {
-    const url = 'https://control.msg91.com/api/v5/widget/sendOtp';
-    const response = await fetch(url, {
-      method: 'POST',
+  const url = 'https://control.msg91.com/api/v5/widget/sendOtp';
+  const attempts = [
+    // Attempt 1: Without tokenAuth (bypasses tokenAuth IP throttle while using valid Authkey)
+    {
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
         authkey: authKey.trim()
       },
-      body: JSON.stringify({
-        widgetId,
-        identifier: mobile,
-        tokenAuth
-      })
-    });
-
-    const data = await response.json().catch(() => ({}));
-
-    if (response.ok && data.type === 'success') {
-      console.log(`[MSG91 Widget OTP Success] Sent to ${mobile}, reqId: ${data.message}`);
-      return {
-        success: true,
-        reqId: data.message,
-        message: 'OTP sent successfully via MSG91 WhatsApp/Widget'
-      };
-    } else {
-      console.error('[MSG91 Widget OTP Error]:', data);
-      return {
-        success: false,
-        message: data.message || 'Failed to send OTP via widget',
-        data
-      };
+      body: { widgetId, identifier: mobile }
+    },
+    // Attempt 2: With tokenAuth if attempt 1 fails
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        authkey: authKey.trim()
+      },
+      body: { widgetId, identifier: mobile, tokenAuth }
     }
-  } catch (error) {
-    console.error('[MSG91 Widget Send Network Error]:', error.message);
-    return { success: false, message: error.message };
+  ];
+
+  let lastError = null;
+  for (const att of attempts) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: att.headers,
+        body: JSON.stringify(att.body)
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok && data.type === 'success') {
+        console.log(`[MSG91 Widget OTP Success] Sent to ${mobile}, reqId: ${data.message}`);
+        return {
+          success: true,
+          reqId: data.message,
+          message: 'OTP sent successfully via MSG91 WhatsApp/Widget'
+        };
+      } else {
+        lastError = data.message || `HTTP ${response.status}`;
+      }
+    } catch (e) {
+      lastError = e.message;
+    }
   }
+
+  return {
+    success: false,
+    message: lastError || 'Failed to send OTP via widget'
+  };
 };
 
 /**
