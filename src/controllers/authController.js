@@ -423,5 +423,57 @@ const verifyWidgetToken = async (req, res) => {
   }
 };
 
-module.exports = { sendOtp, verifyOtp, verifyWidgetToken };
+const getMsg91Status = async (req, res) => {
+  const authKey = process.env.MSG91_AUTH_KEY;
+  let outboundIp = null;
+  try {
+    const ipRes = await fetch('https://api.ipify.org?format=json');
+    const ipData = await ipRes.json();
+    outboundIp = ipData.ip;
+  } catch (e) {
+    outboundIp = e.message;
+  }
+
+  let widgetTest = null;
+  if (authKey) {
+    try {
+      const widgetId = process.env.MSG91_WIDGET_ID || '366b63714641323136353833';
+      const tokenAuth = process.env.MSG91_TOKEN_AUTH || '586808TRmIwbVp6aea1d2eP1';
+      const testRes = await fetch('https://control.msg91.com/api/v5/widget/sendOtp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authkey: authKey.trim()
+        },
+        body: JSON.stringify({
+          widgetId,
+          identifier: '917902755306',
+          tokenAuth
+        })
+      });
+      const testData = await testRes.json().catch(() => ({}));
+      widgetTest = {
+        httpStatus: testRes.status,
+        body: testData
+      };
+    } catch (err) {
+      widgetTest = { error: err.message };
+    }
+  }
+
+  return res.json({
+    version: 'diag-v1',
+    outboundIp,
+    env: {
+      MSG91_AUTH_KEY_EXISTS: Boolean(authKey),
+      MSG91_AUTH_KEY_PREFIX: authKey ? authKey.substring(0, 6) + '...' + authKey.slice(-4) : null,
+      MSG91_WIDGET_ID: process.env.MSG91_WIDGET_ID || null,
+      MSG91_TOKEN_AUTH_EXISTS: Boolean(process.env.MSG91_TOKEN_AUTH),
+      MSG91_OTP_TEMPLATE_ID: process.env.MSG91_OTP_TEMPLATE_ID || null
+    },
+    widgetTest
+  });
+};
+
+module.exports = { sendOtp, verifyOtp, verifyWidgetToken, getMsg91Status };
 
