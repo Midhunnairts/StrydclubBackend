@@ -60,7 +60,7 @@ const sendOtp = async ({ phone, otp, templateId, otpExpiry = 5 }) => {
   }
 
   try {
-    const url = new URL('https://control.msg91.com/api/v5/otp');
+    const url = new URL('https://api.msg91.com/api/v5/otp');
     url.searchParams.append('template_id', tId);
     url.searchParams.append('mobile', mobile);
     url.searchParams.append('otp_expiry', String(otpExpiry));
@@ -120,7 +120,7 @@ const retryOtp = async ({ phone, retryType = 'text' }) => {
   }
 
   try {
-    const url = new URL('https://control.msg91.com/api/v5/otp/retry');
+    const url = new URL('https://api.msg91.com/api/v5/otp/retry');
     url.searchParams.append('authkey', authKey.trim());
     url.searchParams.append('mobile', mobile);
     url.searchParams.append('retrytype', retryType);
@@ -169,7 +169,7 @@ const sendFlow = async ({ templateId, recipients = [] }) => {
   }));
 
   try {
-    const response = await fetch('https://control.msg91.com/api/v5/flow', {
+    const response = await fetch('https://api.msg91.com/api/v5/flow', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -222,7 +222,7 @@ const verifyWidgetAccessToken = async (accessToken) => {
   }
 
   try {
-    const url = 'https://control.msg91.com/api/v5/widget/verifyAccessToken';
+    const url = 'https://api.msg91.com/api/v5/widget/verifyAccessToken';
     const payload = {
       authkey: authKey.trim(),
       'access-token': accessToken
@@ -289,7 +289,7 @@ const sendWidgetOtp = async ({ phone }) => {
     return { success: false, message: 'MSG91_AUTH_KEY is not set' };
   }
 
-  const url = 'https://control.msg91.com/api/v5/widget/sendOtp';
+  const url = 'https://api.msg91.com/api/v5/widget/sendOtp';
   const attempts = [
     // Attempt 1: Without tokenAuth (bypasses tokenAuth IP throttle while using valid Authkey)
     {
@@ -358,7 +358,7 @@ const verifyWidgetOtp = async ({ reqId, otp }) => {
   }
 
   try {
-    const url = 'https://control.msg91.com/api/v5/widget/verifyOtp';
+    const url = 'https://api.msg91.com/api/v5/widget/verifyOtp';
     const response = await fetch(url, {
       method: 'POST',
       headers: {

@@ -441,7 +441,7 @@ const getMsg91Status = async (req, res) => {
 
     // Test 1: With tokenAuth in body
     try {
-      const r1 = await fetch('https://control.msg91.com/api/v5/widget/sendOtp', {
+      const r1 = await fetch('https://api.msg91.com/api/v5/widget/sendOtp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authkey: authKey.trim() },
         body: JSON.stringify({ widgetId, identifier: '917902755306', tokenAuth })
@@ -453,7 +453,7 @@ const getMsg91Status = async (req, res) => {
 
     // Test 2: WITHOUT tokenAuth
     try {
-      const r2 = await fetch('https://control.msg91.com/api/v5/widget/sendOtp', {
+      const r2 = await fetch('https://api.msg91.com/api/v5/widget/sendOtp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authkey: authKey.trim() },
         body: JSON.stringify({ widgetId, identifier: '917902755306' })
@@ -465,7 +465,7 @@ const getMsg91Status = async (req, res) => {
 
     // Test 3: Browser headers + User-Agent
     try {
-      const r3 = await fetch('https://control.msg91.com/api/v5/widget/sendOtp', {
+      const r3 = await fetch('https://api.msg91.com/api/v5/widget/sendOtp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
