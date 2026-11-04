@@ -754,6 +754,9 @@ const verifyCashfreePayment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Cashfree payment not completed or invalid.' });
     }
 
+    // Safely extract order_tags from verified Cashfree order response
+    const orderTags = cfData?.order_tags || cfData?.data?.order_tags || null;
+
     // Recover slot details from order_tags if available
     if (!surfingSlot && orderTags?.surfingSlot) {
       surfingSlot = orderTags.surfingSlot;
