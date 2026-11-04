@@ -289,19 +289,16 @@ const sendWidgetOtp = async ({ phone }) => {
     return { success: false, message: 'MSG91_AUTH_KEY is not set' };
   }
 
-  const url = 'https://api.msg91.com/api/v5/widget/sendOtp';
   const attempts = [
-    // Attempt 1: Without tokenAuth (bypasses tokenAuth IP throttle while using valid Authkey)
+    // Attempt 1: Using tokenAuth directly in body (MSG91 dedicated widget token, no authkey header)
     {
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        authkey: authKey.trim()
+        'Accept': 'application/json'
       },
-      body: { widgetId, identifier: mobile }
+      body: { widgetId, identifier: mobile, tokenAuth }
     },
-    // Attempt 2: With tokenAuth if attempt 1 fails
+    // Attempt 2: With authkey header and tokenAuth
     {
       headers: {
         'Content-Type': 'application/json',
@@ -309,6 +306,15 @@ const sendWidgetOtp = async ({ phone }) => {
         authkey: authKey.trim()
       },
       body: { widgetId, identifier: mobile, tokenAuth }
+    },
+    // Attempt 3: With authkey header alone (without tokenAuth)
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        authkey: authKey.trim()
+      },
+      body: { widgetId, identifier: mobile }
     }
   ];
 

@@ -439,6 +439,18 @@ const getMsg91Status = async (req, res) => {
     const widgetId = process.env.MSG91_WIDGET_ID || '366b63714641323136353833';
     const tokenAuth = process.env.MSG91_TOKEN_AUTH || '586808TRmIwbVp6aea1d2eP1';
 
+    // Test 0: ONLY tokenAuth in body, NO authkey header
+    try {
+      const r0 = await fetch('https://api.msg91.com/api/v5/widget/sendOtp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ widgetId, identifier: '917902755306', tokenAuth })
+      });
+      tests.onlyTokenAuthNoAuthkey = { status: r0.status, body: await r0.json().catch(() => ({})) };
+    } catch (e) {
+      tests.onlyTokenAuthNoAuthkey = { error: e.message };
+    }
+
     // Test 1: With tokenAuth in body
     try {
       const r1 = await fetch('https://api.msg91.com/api/v5/widget/sendOtp', {
