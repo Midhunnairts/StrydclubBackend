@@ -459,12 +459,76 @@ const updateEvent = async (req, res) => {
  * Manually sync a Cashfree order ID and register user if paid
  */
 const syncCashfreeOrder = async (req, res) => {
-  const { order_id } = req.body;
-  if (!order_id) {
-    return res.status(400).json({ success: false, message: 'Please provide a valid Cashfree order_id' });
+  const { order_id, phone, eventId: paramEventId } = req.body;
+  if (!order_id && (!phone || !paramEventId)) {
+    return res.status(400).json({ success: false, message: 'Please provide a Cashfree order_id, or both phone number and event' });
   }
 
   try {
+    // If phone and event are provided directly by admin
+    if (!order_id && phone && paramEventId) {
+      const cleanPhone = phone.replace(/\D/g, '').slice(-10);
+      const user = await User.findOne({ phone: new RegExp(cleanPhone + '$') });
+      if (!user) {
+        return res.status(404).json({ success: false, message: `Athlete with phone ending in ${cleanPhone} not found in database.` });
+      }
+
+      let event = null;
+      if (mongoose.Types.ObjectId.isValid(paramEventId)) {
+        event = await Event.findById(paramEventId);
+      } else {
+        event = await Event.findOne({ slug: paramEventId });
+      }
+      if (!event) {
+        return res.status(404).json({ success: false, message: 'Event not found in database.' });
+      }
+
+      const existingReg = await Registration.findOne({ user: user._id, event: event._id });
+      if (existingReg) {
+        return res.status(200).json({
+          success: true,
+          message: `Athlete ${user.name || user.phone} is ALREADY registered for '${event.title}'!`,
+          registration: existingReg
+        });
+      }
+
+      const newReg = await Registration.create({
+        user: user._id,
+        event: event._id,
+        status: 'Confirmed',
+        paymentId: `cf_pay_${Date.now()}`,
+        orderId: `admin_sync_${event._id}_${Date.now()}`
+      });
+
+      const participantName = user.name && user.name.trim() !== '' ? user.name : (user.phone || 'Athlete');
+      const alreadyIn = event.participants.some(
+        p => (p.userId && p.userId.toString() === user._id.toString()) || p.name === participantName
+      );
+      if (!alreadyIn) {
+        event.participants.push({
+          userId: user._id,
+          name: participantName,
+          role: 'Participant'
+        });
+        event.slotsFilled = (event.slotsFilled || 0) + 1;
+        await event.save();
+      }
+
+      user.totalEvents = (user.totalEvents || 0) + 1;
+      user.sportsPlayed = Math.max(user.sportsPlayed || 0, 1);
+      if (!user.favoriteSports) user.favoriteSports = [];
+      if (!user.favoriteSports.includes(event.category)) {
+        user.favoriteSports.push(event.category);
+      }
+      await user.save();
+
+      return res.status(200).json({
+        success: true,
+        message: `Successfully confirmed registration for ${participantName} in '${event.title}'!`,
+        registration: newReg
+      });
+    }
+
     const envVal = (process.env.CASHFREE_ENV || '').trim().toUpperCase();
     const isProd = envVal === 'PROD' || envVal === 'PRODUCTION' || envVal === 'LIVE';
     const baseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';

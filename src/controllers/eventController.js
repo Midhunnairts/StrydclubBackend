@@ -594,6 +594,11 @@ const createCashfreeOrder = async (req, res) => {
     const baseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
 
     const frontendUrl = req.headers.origin || process.env.FRONTEND_URL || 'https://strydclub.com';
+    const backendUrl = process.env.BACKEND_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+      (req.headers.host && !req.headers.host.includes('localhost') ? `https://${req.headers.host}` : 'https://strydclub-backend.vercel.app'));
+    const notifyUrl = `${backendUrl}/api/events/cashfree-webhook`;
+
     // Cashfree order_tags values strictly allow only alphanumeric, underscores, and hyphens (no spaces, colons, or unicode dashes)
     const safeSlotTime = surfingSlotTime
       ? String(surfingSlotTime).replace(/\s+/g, '_').replace(/[:–—]/g, '-').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50)
@@ -621,7 +626,8 @@ const createCashfreeOrder = async (req, res) => {
         customer_name: req.user.name || 'Athlete'
       },
       order_meta: {
-        return_url: `${frontendUrl}/events/${event.slug}?order_id={order_id}`
+        return_url: `${frontendUrl}/events/${event.slug}?order_id={order_id}`,
+        notify_url: notifyUrl
       },
       order_tags: orderTags
     };
@@ -707,8 +713,8 @@ const verifyCashfreePayment = async (req, res) => {
         'x-api-version': '2023-08-01'
       };
 
-      // Resilient retry loop: allow up to 3 attempts with 1.5s delay for payment state transition
-      const maxRetries = 3;
+      // Resilient retry loop: allow up to 5 attempts with 2.0s delay (10s total) for UPI payment state transition
+      const maxRetries = 5;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           const response = await fetch(`${baseUrl}/orders/${order_id}`, {
@@ -745,7 +751,7 @@ const verifyCashfreePayment = async (req, res) => {
         }
 
         if (!isPaymentValid && attempt < maxRetries) {
-          await new Promise(r => setTimeout(r, 1500));
+          await new Promise(r => setTimeout(r, 2000));
         }
       }
     }
