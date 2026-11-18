@@ -16,6 +16,7 @@ const getSports = async (req, res) => {
 
   try {
     const standardCategories = ['Running', 'Badminton', 'Football', 'Volleyball', 'Pickleball', 'Lifestyle', 'Surfing'];
+    const now = new Date();
 
     const sportsData = await Promise.all(sportsList.map(async (sport) => {
       let events;
@@ -28,7 +29,21 @@ const getSports = async (req, res) => {
         events = await Event.find({ category: regex });
       }
 
-      const eventsCount = events.length;
+      // Check if an event is active & upcoming (not completed, cancelled, or past)
+      const isUpcoming = (e) => {
+        if (!e) return false;
+        if (e.status) {
+          const s = e.status.toString().toUpperCase().trim();
+          if (s === 'COMPLETED' || s === 'EVENT COMPLETED' || s === 'PAST' || s === 'CANCELLED') {
+            return false;
+          }
+        }
+        return !isEventOver(e, now);
+      };
+
+      const upcomingEvents = events.filter(isUpcoming);
+      const upcomingEventsCount = upcomingEvents.length;
+      const totalEventsCount = events.length;
       const eventIds = events.map(e => e._id);
 
       // Find unique registered users for events of this sport category
@@ -44,9 +59,14 @@ const getSports = async (req, res) => {
 
       // Find next upcoming event
       let nextEvent = null;
-      if (events.length > 0) {
-        const sortedEvents = events.sort((a, b) => new Date(a.date) - new Date(b.date));
-        const upcomingEvent = sortedEvents.find(e => !isEventOver(e)) || sortedEvents[0];
+      if (upcomingEvents.length > 0) {
+        const sortedUpcoming = [...upcomingEvents].sort((a, b) => {
+          const dateA = new Date(a.date);
+          const dateB = new Date(b.date);
+          if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
+          return dateA - dateB;
+        });
+        const upcomingEvent = sortedUpcoming[0];
         if (upcomingEvent) {
           nextEvent = {
             title: upcomingEvent.title,
@@ -70,7 +90,9 @@ const getSports = async (req, res) => {
         name: sport.name,
         icon: sport.icon,
         description: sport.description,
-        eventsCount,
+        eventsCount: upcomingEventsCount,
+        upcomingEventsCount,
+        totalEventsCount,
         membersCount,
         nextEvent
       };
